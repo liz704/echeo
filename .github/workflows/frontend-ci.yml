@@ -41,10 +41,10 @@ jobs:
           path: .next
           retention-days: 5
 
-  docker:
+ docker:
     runs-on: ubuntu-latest
     needs: build
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image (validation)
-        run: docker build -t echeo-frontend:ci .
+        run: docker build -t echeo-frontend:ci ./frontend
