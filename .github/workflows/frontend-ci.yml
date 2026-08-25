@@ -41,7 +41,7 @@ jobs:
           path: .next
           retention-days: 5
 
- docker:
+  docker:
     runs-on: ubuntu-latest
     needs: build
     steps:
