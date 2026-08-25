@@ -47,4 +47,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image (validation)
-        run: docker build -t echeo-frontend:ci ./frontend
+        run: docker build -t echeo-frontend:ci .
