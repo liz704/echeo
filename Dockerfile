@@ -3,7 +3,7 @@ FROM node:22-slim AS deps
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile --config.onlyBuiltDependencies=unrs-resolver
+RUN pnpm install --frozen-lockfile 
 
 # --- Étape 2 : build ---
 FROM node:22-slim AS build
