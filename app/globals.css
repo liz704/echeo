@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+/* Lisibilité maximale des champs texte et placeholders (exigence UI). */
+input,
+textarea,
+select {
+  font-size: 1rem;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgb(100 116 139); /* slate-500 : contraste suffisant sur fond clair et sombre */
+  opacity: 1;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: rgb(148 163 184); /* slate-400 */
+}
