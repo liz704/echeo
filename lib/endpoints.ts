@@ -129,8 +129,16 @@ export async function deleteNotification(id: number): Promise<void> {
   await apiClient.delete(`/notifications/${id}`);
 }
 
+export async function deleteAllNotifications(): Promise<void> {
+  await apiClient.delete("/notifications/history");
+}
+
 export async function deletePaymentHistoryEntry(paymentHistoryId: number): Promise<void> {
   await apiClient.delete(`/payments/history/${paymentHistoryId}`);
+}
+
+export async function deleteAllPaymentHistoryFor(eventMemberStatusId: number): Promise<void> {
+  await apiClient.delete(`/payments/${eventMemberStatusId}/history`);
 }
 
 // --- Groupes ---------------------------------------------------------------

@@ -146,7 +146,7 @@ export interface EventMemberStatusResult {
     targetAmount: number;
     eventDate: string;
   };
-  member: {
+  groupMember: {                    // ← changé de "member" à "groupMember"
     id: number;
     contactFullName: string;
     contactEmail: string;
@@ -196,6 +196,10 @@ export interface GroupEvent {
   description?: string;
   targetAmount: number;
   eventDate: string;
+  // Heure réglée par le créateur pour les relances de cet événement
+  // (format "HH:mm:ss", tel que renvoyé par le backend). Absente = 08:00
+  // par défaut côté serveur.
+  eventTime?: string;
   repetitionType: RepetitionType;
   nextOccurrence?: string;
   paused: boolean;
@@ -206,6 +210,7 @@ export interface GroupEventCreatePayload {
   description?: string;
   targetAmount: number;
   eventDate: string;
+  eventTime?: string;
   groupMemberIds: number[];
   repetitionType: RepetitionType;
 }
@@ -215,6 +220,7 @@ export interface GroupEventUpdatePayload {
   description?: string;
   targetAmount: number;
   eventDate: string;
+  eventTime?: string;
   repetitionType: RepetitionType;
 }
 

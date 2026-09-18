@@ -58,6 +58,9 @@ function GroupDetailContent() {
   const [eventDescription, setEventDescription] = useState("");
   const [eventTargetAmount, setEventTargetAmount] = useState("");
   const [eventDate, setEventDate] = useState("");
+  // Heure des relances de cet événement (optionnelle — 08:00 par défaut côté
+  // backend si laissée vide).
+  const [eventTime, setEventTime] = useState("");
   const [eventRepetitionType, setEventRepetitionType] = useState<RepetitionType>("NONE");
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([]);
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
@@ -69,6 +72,7 @@ function GroupDetailContent() {
   const [editDescription, setEditDescription] = useState("");
   const [editTargetAmount, setEditTargetAmount] = useState("");
   const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
   const [editRepetitionType, setEditRepetitionType] = useState<RepetitionType>("NONE");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -149,6 +153,7 @@ function GroupDetailContent() {
         description: eventDescription.trim() || undefined,
         targetAmount,
         eventDate,
+        eventTime: eventTime || undefined,
         groupMemberIds: selectedMemberIds,
         repetitionType: eventRepetitionType,
       });
@@ -158,6 +163,7 @@ function GroupDetailContent() {
       setEventDescription("");
       setEventTargetAmount("");
       setEventDate("");
+      setEventTime("");
       setEventRepetitionType("NONE");
       setSelectedMemberIds([]);
       setIsEventModalOpen(false);
@@ -176,6 +182,8 @@ function GroupDetailContent() {
     setEditDescription(groupEvent.description ?? "");
     setEditTargetAmount(String(groupEvent.targetAmount));
     setEditDate(groupEvent.eventDate);
+    // Le backend renvoie "HH:mm:ss" (LocalTime) ; l'input time attend "HH:mm".
+    setEditTime(groupEvent.eventTime ? groupEvent.eventTime.slice(0, 5) : "");
     setEditRepetitionType(groupEvent.repetitionType);
     setEditError(null);
   }
@@ -198,6 +206,7 @@ function GroupDetailContent() {
         description: editDescription.trim() || undefined,
         targetAmount,
         eventDate: editDate,
+        eventTime: editTime || undefined,
         repetitionType: editRepetitionType,
       });
       setEvents((current) => current.map((e) => (e.id === updated.id ? updated : e)));
@@ -343,7 +352,9 @@ function GroupDetailContent() {
                         )}
                       </div>
                       <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                        Échéance : {groupEvent.eventDate} — Objectif : {formatAmount(groupEvent.targetAmount)}
+                        Échéance : {groupEvent.eventDate}
+                        {groupEvent.eventTime ? ` à ${groupEvent.eventTime.slice(0, 5)}` : ""} — Objectif :{" "}
+                        {formatAmount(groupEvent.targetAmount)}
                       </p>
                     </div>
                     <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
@@ -501,6 +512,17 @@ function GroupDetailContent() {
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
             </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                Heure des relances (optionnel, 08:00 par défaut)
+              </label>
+              <input
+                type="time"
+                value={eventTime}
+                onChange={(e) => setEventTime(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
           </div>
 
           <div>
@@ -593,7 +615,7 @@ function GroupDetailContent() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
                 Montant cible (FCFA)
@@ -614,6 +636,17 @@ function GroupDetailContent() {
                 type="date"
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                Heure (optionnel)
+              </label>
+              <input
+                type="time"
+                value={editTime}
+                onChange={(e) => setEditTime(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
             </div>

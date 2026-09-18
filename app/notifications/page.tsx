@@ -17,7 +17,7 @@ import { AppNavbar } from "@/components/AppNavbar";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { ConfirmModal } from "@/components/ui/Modal";
 import { useToast } from "@/contexts/ToastContext";
-import { deleteNotification, fetchNotificationHistory } from "@/lib/endpoints";
+import { deleteAllNotifications, deleteNotification, fetchNotificationHistory } from "@/lib/endpoints";
 import type { NotificationLog, NotificationStatus, NotificationType } from "@/lib/types";
 
 const TYPE_ICONS: Record<NotificationType, typeof Mail> = {
@@ -74,6 +74,8 @@ function NotificationsContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [pendingDelete, setPendingDelete] = useState<NotificationLog | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isClearingAll, setIsClearingAll] = useState(false);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -112,6 +114,21 @@ function NotificationsContent() {
     }
   }
 
+  async function handleClearAll() {
+    setIsClearingAll(true);
+    try {
+      await deleteAllNotifications();
+      setNotifications([]);
+      showSuccess("Historique vidé.");
+      setConfirmClearAll(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Échec de la suppression.";
+      showError(message);
+    } finally {
+      setIsClearingAll(false);
+    }
+  }
+
   if (isLoading) {
     return <FullPageSpinner label="Chargement des notifications..." />;
   }
@@ -120,9 +137,21 @@ function NotificationsContent() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      <div className="mb-6 flex items-center gap-2">
-        <BellRing className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mes notifications</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BellRing className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mes notifications</h1>
+        </div>
+        {notifications.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setConfirmClearAll(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            <Trash2 className="h-4 w-4" />
+            Tout supprimer
+          </button>
+        )}
       </div>
       <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">
         Historique des relances de paiement (email, SMS, WhatsApp). "Livrée" est confirmé par le
@@ -198,6 +227,17 @@ function NotificationsContent() {
         isLoading={isDeleting}
         onConfirm={handleConfirmDelete}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ConfirmModal
+        isOpen={confirmClearAll}
+        title="Vider tout l'historique ?"
+        description={`Les ${notifications.length} notifications listées ici seront définitivement supprimées.`}
+        confirmLabel="Tout supprimer"
+        isDangerous
+        isLoading={isClearingAll}
+        onConfirm={handleClearAll}
+        onCancel={() => setConfirmClearAll(false)}
       />
     </main>
   );

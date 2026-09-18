@@ -122,7 +122,7 @@ function EventStatusesContent() {
       </Link>
 
       <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-        {statuses[0]?.event.title ?? "Statuts de paiement"}
+        {statuses[0]?.event?.title ?? "Statuts de paiement"}
       </h1>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
         Suivi des cotisations par membre. Enregistre un paiement reçu en espèces/Mobile Money,
@@ -142,13 +142,15 @@ function EventStatusesContent() {
             >
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium text-slate-900 dark:text-white">{status.member.contactFullName}</p>
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    {status.groupMember?.contactFullName ?? "Membre"}
+                  </p>
                   <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[status.status]}`}>
                     {STATUS_LABELS[status.status]}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                  {formatAmount(status.paidAmount)} / {formatAmount(status.requiredAmount)}
+                  {formatAmount(status.paidAmount ?? 0)} / {formatAmount(status.requiredAmount ?? 0)}
                 </p>
               </div>
 
@@ -182,7 +184,7 @@ function EventStatusesContent() {
           setActiveStatus(null);
           setRecordError(null);
         }}
-        title={`Enregistrer un paiement — ${activeStatus?.member.contactFullName ?? ""}`}
+        title={`Enregistrer un paiement — ${activeStatus?.groupMember?.contactFullName ?? ""}`}
       >
         <form onSubmit={handleRecordPayment} className="space-y-4">
           <div>

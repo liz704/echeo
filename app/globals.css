@@ -1,6 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Active le mode sombre piloté par une classe .dark sur <html>, au lieu du
+   comportement par défaut de Tailwind v4 basé sur prefers-color-scheme.
+   C'est ce qui permet à ThemeContext.tsx (qui ajoute/retire .dark sur <html>)
+   de fonctionner avec les classes dark:... utilisées partout dans le code. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-brand: #0f766e;
+  --color-brand-light: #14b8a6;
+  --color-brand-dark: #0b3b36;
+}
 
 html,
 body {
@@ -16,11 +26,28 @@ select {
 
 input::placeholder,
 textarea::placeholder {
-  color: rgb(100 116 139); /* slate-500 : contraste suffisant sur fond clair et sombre */
+  color: rgb(100 116 139);
   opacity: 1;
 }
 
 .dark input::placeholder,
 .dark textarea::placeholder {
-  color: rgb(148 163 184); /* slate-400 */
+  color: rgb(148 163 184);
+}
+
+/* Animation d'entrée réelle pour les toasts (remplace une classe de plugin
+   jamais installé qui n'avait aucun effet). */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toast-in 0.25s ease-out;
 }
