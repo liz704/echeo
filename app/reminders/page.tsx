@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Trash2, Plus, RefreshCcw, History } from "lucide-react";
+import { CheckCircle2, Trash2, Plus, RefreshCcw, History, Pencil } from "lucide-react";
 import Link from "next/link";
 import { AuthGuard } from "@/components/AuthGuard";
 import { AppNavbar } from "@/components/AppNavbar";
@@ -9,8 +9,10 @@ import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { ConfirmModal, Modal } from "@/components/ui/Modal";
 import { StatusBadge, resolveReminderStatus } from "@/components/ui/Badge";
 import { useToast } from "@/contexts/ToastContext";
+import { useLocale } from "@/contexts/LocaleContext";
 import {
   createReminder,
+  updateReminder,
   deleteReminder,
   fetchActiveReminders,
   markReminderCompleted,
@@ -43,6 +45,7 @@ const EMPTY_FORM: NewReminderForm = {
 
 function RemindersContent() {
   const { showSuccess, showError } = useToast();
+  const { t } = useLocale();
 
   const [reminders, setReminders] = useState<ReminderResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,6 +58,53 @@ function RemindersContent() {
   const [form, setForm] = useState<NewReminderForm>(EMPTY_FORM);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const [reminderToEdit, setReminderToEdit] = useState<ReminderResponse | null>(null);
+  const [editForm, setEditForm] = useState<NewReminderForm>(EMPTY_FORM);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function openEditModal(reminder: ReminderResponse) {
+    setReminderToEdit(reminder);
+    setEditForm({
+      title: reminder.title,
+      description: reminder.description ?? "",
+      dueDate: reminder.dueDate,
+      // Le backend renvoie "HH:mm:ss" ; l'input time attend "HH:mm".
+      dueTime: reminder.dueTime ? reminder.dueTime.slice(0, 5) : "",
+      repetitionType: reminder.repetitionType,
+    });
+    setEditError(null);
+  }
+
+  async function handleEditSubmit() {
+    if (!reminderToEdit) return;
+    if (!editForm.title.trim() || !editForm.dueDate) {
+      setEditError("Le titre et la date d'échéance sont obligatoires.");
+      return;
+    }
+    setEditError(null);
+    setIsSavingEdit(true);
+
+    try {
+      const updated = await updateReminder(reminderToEdit.id, {
+        title: editForm.title.trim(),
+        description: editForm.description.trim() || undefined,
+        dueDate: editForm.dueDate,
+        dueTime: editForm.dueTime || undefined,
+        repetitionType: editForm.repetitionType,
+      });
+      setReminders((current) => current.map((r) => (r.id === updated.id ? updated : r)));
+      showSuccess("Rappel modifié avec succès.");
+      setReminderToEdit(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Échec de la modification du rappel.";
+      setEditError(message);
+      showError(message);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
 
   async function loadReminders() {
     setIsLoading(true);
@@ -147,7 +197,7 @@ function RemindersContent() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mes rappels</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{t("reminders.title")}</h1>
         <div className="flex items-center gap-2">
           <Link
             href="/reminders/history"
@@ -203,6 +253,15 @@ function RemindersContent() {
               </div>
 
               <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={() => openEditModal(reminder)}
+                  aria-label="Modifier"
+                  title="Modifier"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
                 <button
                   type="button"
                   onClick={() => handleComplete(reminder)}
@@ -332,6 +391,99 @@ function RemindersContent() {
           >
             {isCreating && <Spinner size={16} />}
             Créer le rappel
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!reminderToEdit}
+        onClose={() => {
+          setReminderToEdit(null);
+          setEditError(null);
+        }}
+        title="Modifier le rappel"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Titre
+            </label>
+            <input
+              type="text"
+              value={editForm.title}
+              onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Description <span className="font-normal text-slate-400">(optionnel)</span>
+            </label>
+            <textarea
+              value={editForm.description}
+              onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+              rows={2}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                Date d'échéance
+              </label>
+              <input
+                type="date"
+                value={editForm.dueDate}
+                onChange={(e) => setEditForm((f) => ({ ...f, dueDate: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                Heure <span className="font-normal text-slate-400">(optionnel)</span>
+              </label>
+              <input
+                type="time"
+                value={editForm.dueTime}
+                onChange={(e) => setEditForm((f) => ({ ...f, dueTime: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Récurrence
+            </label>
+            <select
+              value={editForm.repetitionType}
+              onChange={(e) => setEditForm((f) => ({ ...f, repetitionType: e.target.value as RepetitionType }))}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              {Object.entries(REPETITION_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {editError && (
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+              {editError}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleEditSubmit}
+            disabled={isSavingEdit}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+          >
+            {isSavingEdit && <Spinner size={16} />}
+            Enregistrer les modifications
           </button>
         </div>
       </Modal>

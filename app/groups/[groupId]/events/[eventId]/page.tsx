@@ -3,71 +3,105 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Banknote, Link as LinkIcon, Smartphone } from "lucide-react";
-import { AuthGuard } from "@/components/AuthGuard";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { AppNavbar } from "@/components/AppNavbar";
-import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
+import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/ui/Modal";
+import { Spinner, FullPageSpinner } from "@/components/ui/Spinner";
 import { useToast } from "@/contexts/ToastContext";
-import { fetchEventMemberStatuses, generatePaymentLink, recordPayment } from "@/lib/endpoints";
-import type { EventMemberStatusResult, PaymentMethod, PaymentStatus } from "@/lib/types";
+import {
+  fetchEventDetail,
+  recordPayment,
+} from "@/lib/endpoints";
+import type {
+  EventDetailResponse,
+  EventMemberDetailItem,
+  PaymentStatus,
+} from "@/lib/types";
 
 const STATUS_LABELS: Record<PaymentStatus, string> = {
   PENDING: "En attente",
-  PARTIALLY_PAID: "Partiellement payé",
+  PARTIALLY_PAID: "Partiel",
   PAID: "Payé",
   SURPLUS: "Surplus",
   OVERDUE: "En retard",
+  NOT_SEEN: "Pas encore vu",
+  SEEN: "Vu",
 };
 
 const STATUS_CLASSES: Record<PaymentStatus, string> = {
-  PENDING: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  PARTIALLY_PAID: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  PENDING: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  PARTIALLY_PAID: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   PAID: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  SURPLUS: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+  SURPLUS: "bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
   OVERDUE: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+  NOT_SEEN: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  SEEN: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
 };
 
-function formatAmount(value: number): string {
-  return new Intl.NumberFormat("fr-FR").format(value) + " FCFA";
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: "Paiement physique",
+  MOBILE_MONEY: "Mobile Money",
+  ORANGE_MONEY: "Orange Money",
+  CARD: "Carte bancaire",
+};
+
+function formatAmount(value: number) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "XAF",
+    maximumFractionDigits: 0,
+  }).format(value);
 }
 
-function EventStatusesContent() {
+function EventDetailContent() {
   const params = useParams<{ groupId: string; eventId: string }>();
   const eventId = Number(params.eventId);
-  const groupId = params.groupId;
+  const groupId = Number(params.groupId);
   const { showSuccess, showError } = useToast();
 
-  const [statuses, setStatuses] = useState<EventMemberStatusResult[]>([]);
+  const [detail, setDetail] = useState<EventDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
-  const [activeStatus, setActiveStatus] = useState<EventMemberStatusResult | null>(null);
+  const [activeMember, setActiveMember] = useState<EventMemberDetailItem | null>(null);
   const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [isRecording, setIsRecording] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
 
-  const [isGeneratingLink, setIsGeneratingLink] = useState<number | null>(null);
-
-  function loadStatuses() {
+  function loadDetail() {
     setIsLoading(true);
-    fetchEventMemberStatuses(eventId)
-      .then(setStatuses)
+    fetchEventDetail(groupId, eventId)
+      .then(setDetail)
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Impossible de charger les statuts.";
+        const message = error instanceof Error ? error.message : "Impossible de charger l'événement.";
         showError(message);
       })
       .finally(() => setIsLoading(false));
   }
 
   useEffect(() => {
-    loadStatuses();
+    loadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
+  }, [eventId, groupId]);
+
+  function toggleExpand(id: number) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function handleRecordPayment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!activeStatus) return;
+    if (!activeMember) return;
 
     const numericAmount = Number(amount);
     if (!numericAmount || numericAmount <= 0) {
@@ -78,11 +112,11 @@ function EventStatusesContent() {
     setIsRecording(true);
 
     try {
-      const updated = await recordPayment(activeStatus.id, numericAmount, method);
-      setStatuses((current) => current.map((s) => (s.id === updated.id ? updated : s)));
+      await recordPayment(activeMember.eventMemberStatusId, numericAmount, "CASH");
       showSuccess("Paiement enregistré avec succès.");
       setAmount("");
-      setActiveStatus(null);
+      setActiveMember(null);
+      loadDetail();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Échec de l'enregistrement du paiement.";
       setRecordError(message);
@@ -92,101 +126,161 @@ function EventStatusesContent() {
     }
   }
 
-  async function handleGenerateLink(statusId: number) {
-    setIsGeneratingLink(statusId);
-    try {
-      const token = await generatePaymentLink(statusId);
-      const publicUrl = `${window.location.origin}/pay/${token.tokenUuid}`;
-      await navigator.clipboard.writeText(publicUrl);
-      showSuccess("Lien de paiement copié dans le presse-papier !");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la génération du lien.";
-      showError(message);
-    } finally {
-      setIsGeneratingLink(null);
-    }
+  if (isLoading || !detail) {
+    return <FullPageSpinner label="Chargement de l'événement..." />;
   }
 
-  if (isLoading) {
-    return <FullPageSpinner label="Chargement des statuts de paiement..." />;
-  }
+  const members = detail.members ?? [];
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       <Link
         href={`/groups/${groupId}`}
-        className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+        className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 transition hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
       >
         <ArrowLeft className="h-4 w-4" />
         Retour au groupe
       </Link>
 
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-        {statuses[0]?.event?.title ?? "Statuts de paiement"}
-      </h1>
-      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-        Suivi des cotisations par membre. Enregistre un paiement reçu en espèces/Mobile Money,
-        ou génère un lien de paiement public à partager.
-      </p>
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{detail.title}</h1>
+        {detail.description && (
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{detail.description}</p>
+        )}
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Échéance : {detail.eventDate}
+          {detail.eventTime ? ` à ${detail.eventTime.slice(0, 5)}` : ""}
+          {detail.hasMoney
+            ? ` — Objectif : ${formatAmount(detail.targetAmount ?? 0)}`
+            : " — Info (sans argent)"}
+          {detail.withdrawalFeeAmount != null && detail.withdrawalFeeAmount > 0
+            ? ` — Frais de retrait : ${formatAmount(detail.withdrawalFeeAmount)}`
+            : ""}
+        </p>
+      </header>
 
-      {statuses.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+      <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
+        Suivi par membre
+      </h2>
+
+      {members.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
           Aucun membre associé à cet événement.
         </div>
       ) : (
-        <ul className="mt-6 space-y-3">
-          {statuses.map((status) => (
-            <li
-              key={status.id}
-              className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900"
-            >
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium text-slate-900 dark:text-white">
-                    {status.groupMember?.contactFullName ?? "Membre"}
-                  </p>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[status.status]}`}>
-                    {STATUS_LABELS[status.status]}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                  {formatAmount(status.paidAmount ?? 0)} / {formatAmount(status.requiredAmount ?? 0)}
-                </p>
-              </div>
+        <ul className="space-y-3">
+          {members.map((member) => {
+            const expanded = expandedIds.has(member.eventMemberStatusId);
+            const hasPayments = (member.payments?.length ?? 0) > 0;
+            const canExpand = detail.hasMoney ? hasPayments : !!member.seenAt;
 
-              <div className="flex shrink-0 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveStatus(status)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950"
-                >
-                  <Banknote className="h-4 w-4" />
-                  Enregistrer paiement
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGenerateLink(status.id)}
-                  disabled={isGeneratingLink === status.id}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  {isGeneratingLink === status.id ? <Spinner size={14} /> : <LinkIcon className="h-4 w-4" />}
-                  Lien de paiement
-                </button>
-              </div>
-            </li>
-          ))}
+            return (
+              <li
+                key={member.eventMemberStatusId}
+                className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-slate-900 dark:text-white">
+                        {member.memberFullName ?? "Membre"}
+                      </p>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[member.status]}`}
+                      >
+                        {STATUS_LABELS[member.status]}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                      {detail.hasMoney
+                        ? `${formatAmount(member.paidAmount ?? 0)} / ${formatAmount(member.requiredAmount ?? 0)}`
+                        : member.status === "SEEN" && member.seenAt
+                          ? `Vu le ${new Date(member.seenAt).toLocaleString("fr-FR")}`
+                          : "Pas encore consulté"}
+                      {member.memberEmail ? ` · ${member.memberEmail}` : ""}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {canExpand && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(member.eventMemberStatusId)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                      >
+                        {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        Historique
+                        {detail.hasMoney && hasPayments ? ` (${member.payments.length})` : ""}
+                      </button>
+                    )}
+                    {detail.hasMoney && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveMember(member);
+                          setAmount("");
+                          setRecordError(null);
+                        }}
+                        className="rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-teal-700"
+                      >
+                        Paiement physique
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {expanded && (
+                  <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
+                    {detail.hasMoney ? (
+                      hasPayments ? (
+                        <ul className="space-y-2">
+                          {member.payments.map((p) => (
+                            <li
+                              key={p.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60"
+                            >
+                              <span className="font-medium text-slate-800 dark:text-slate-100">
+                                {formatAmount(p.amountPaid)}
+                              </span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
+                                {PAYMENT_METHOD_LABELS[p.paymentMethod] ?? p.paymentMethod}
+                                {" · "}
+                                {new Date(p.paidAt).toLocaleString("fr-FR")}
+                                {p.transactionRef ? ` · Réf. ${p.transactionRef}` : ""}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-slate-400">Aucun versement enregistré.</p>
+                      )
+                    ) : (
+                      <p className="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
+                        <Check className="h-4 w-4 text-emerald-600" />
+                        {member.seenAt
+                          ? `Consulté le ${new Date(member.seenAt).toLocaleString("fr-FR")}`
+                          : "Pas encore consulté"}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
       <Modal
-        isOpen={!!activeStatus}
-        onClose={() => {
-          setActiveStatus(null);
-          setRecordError(null);
-        }}
-        title={`Enregistrer un paiement — ${activeStatus?.groupMember?.contactFullName ?? ""}`}
+        isOpen={!!activeMember}
+        onClose={() => setActiveMember(null)}
+        title={`Paiement physique — ${activeMember?.memberFullName ?? ""}`}
       >
         <form onSubmit={handleRecordPayment} className="space-y-4">
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            Enregistrement d&apos;un <strong>paiement physique</strong> reçu en main propre
+            (espèces, etc.). Les paiements Mobile Money / Orange Money / carte se font
+            uniquement via le lien envoyé au membre.
+          </p>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
               Montant reçu (FCFA)
@@ -194,58 +288,23 @@ function EventStatusesContent() {
             <input
               type="number"
               min={1}
-              placeholder="Ex : 10000"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Moyen de paiement
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setMethod("CASH")}
-                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                  method === "CASH"
-                    ? "border-teal-500 bg-teal-50 text-teal-700 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-300"
-                    : "border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300"
-                }`}
-              >
-                <Banknote className="h-4 w-4" />
-                Espèces
-              </button>
-              <button
-                type="button"
-                onClick={() => setMethod("MOBILE_MONEY")}
-                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                  method === "MOBILE_MONEY"
-                    ? "border-teal-500 bg-teal-50 text-teal-700 dark:border-teal-500 dark:bg-teal-950 dark:text-teal-300"
-                    : "border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300"
-                }`}
-              >
-                <Smartphone className="h-4 w-4" />
-                Mobile Money
-              </button>
-            </div>
-          </div>
-
           {recordError && (
             <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
               {recordError}
             </p>
           )}
-
           <button
             type="submit"
             disabled={isRecording}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
           >
             {isRecording && <Spinner size={16} />}
-            Enregistrer
+            Enregistrer le paiement physique
           </button>
         </form>
       </Modal>
@@ -253,11 +312,11 @@ function EventStatusesContent() {
   );
 }
 
-export default function EventStatusesPage() {
+export default function EventDetailPage() {
   return (
     <AuthGuard>
       <AppNavbar />
-      <EventStatusesContent />
+      <EventDetailContent />
     </AuthGuard>
   );
 }

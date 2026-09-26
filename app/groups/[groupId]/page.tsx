@@ -2,24 +2,30 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, CalendarPlus, ChevronRight, Mail, Pause, Pencil, Play, UserPlus, Users } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { AppNavbar } from "@/components/AppNavbar";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
-import { Modal } from "@/components/ui/Modal";
+import { ConfirmModal, Modal } from "@/components/ui/Modal";
 import { useToast } from "@/contexts/ToastContext";
 import {
   addGroupMember,
   createGroupEvent,
+  deleteGroup,
+  deleteGroupEvent,
   fetchGroup,
   fetchGroupEvents,
+  fetchGroupHistory,
   fetchGroupMembers,
   pauseGroupEvent,
+  removeGroupMember,
   resumeGroupEvent,
+  updateGroup,
   updateGroupEvent,
 } from "@/lib/endpoints";
-import type { GroupEvent, GroupMember, GroupSummary, RepetitionType } from "@/lib/types";
+import type { GroupEvent, GroupMember, GroupPaymentHistoryItem, GroupSummary, RepetitionType } from "@/lib/types";
+import { Trash2 } from "lucide-react";
 
 const REPETITION_LABELS: Record<RepetitionType, string> = {
   NONE: "Aucune (ponctuel)",
@@ -36,10 +42,12 @@ function formatAmount(value: number): string {
 function GroupDetailContent() {
   const params = useParams<{ groupId: string }>();
   const groupId = Number(params.groupId);
+  const router = useRouter();
   const { showSuccess, showError } = useToast();
 
   const [group, setGroup] = useState<GroupSummary | null>(null);
   const [events, setEvents] = useState<GroupEvent[]>([]);
+  const [historyPayments, setHistoryPayments] = useState<GroupPaymentHistoryItem[]>([]);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -57,6 +65,8 @@ function GroupDetailContent() {
   const [eventTitle, setEventTitle] = useState("");
   const [eventDescription, setEventDescription] = useState("");
   const [eventTargetAmount, setEventTargetAmount] = useState("");
+  const [eventWithdrawalFee, setEventWithdrawalFee] = useState("");
+  const [eventHasMoney, setEventHasMoney] = useState(true);
   const [eventDate, setEventDate] = useState("");
   // Heure des relances de cet événement (optionnelle — 08:00 par défaut côté
   // backend si laissée vide).
@@ -77,15 +87,107 @@ function GroupDetailContent() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
+  const [editGroupName, setEditGroupName] = useState("");
+  const [editGroupDescription, setEditGroupDescription] = useState("");
+  const [isSavingGroup, setIsSavingGroup] = useState(false);
+  const [editGroupError, setEditGroupError] = useState<string | null>(null);
+
+  const [isDeleteGroupModalOpen, setIsDeleteGroupModalOpen] = useState(false);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+
+  const [memberToDelete, setMemberToDelete] = useState<GroupMember | null>(null);
+  const [isDeletingMember, setIsDeletingMember] = useState(false);
+
+  const [eventToDelete, setEventToDelete] = useState<GroupEvent | null>(null);
+  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
+
+  async function handleSaveGroup() {
+    if (!editGroupName.trim()) {
+      setEditGroupError("Le nom du groupe est obligatoire.");
+      return;
+    }
+    setEditGroupError(null);
+    setIsSavingGroup(true);
+    try {
+      const updated = await updateGroup(groupId, {
+        name: editGroupName.trim(),
+        description: editGroupDescription.trim() || undefined,
+      });
+      setGroup(updated);
+      showSuccess("Groupe modifié avec succès.");
+      setIsEditGroupModalOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Échec de la modification du groupe.";
+      setEditGroupError(message);
+      showError(message);
+    } finally {
+      setIsSavingGroup(false);
+    }
+  }
+
+  async function handleConfirmDeleteGroup() {
+    setIsDeletingGroup(true);
+    try {
+      await deleteGroup(groupId);
+      showSuccess("Groupe supprimé.");
+      router.push("/groups");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Échec de la suppression du groupe.";
+      showError(message);
+    } finally {
+      setIsDeletingGroup(false);
+      setIsDeleteGroupModalOpen(false);
+    }
+  }
+
+  async function handleConfirmDeleteMember() {
+    if (!memberToDelete) return;
+    setIsDeletingMember(true);
+    try {
+      await removeGroupMember(groupId, memberToDelete.id);
+      setMembers((current) => current.filter((m) => m.id !== memberToDelete.id));
+      showSuccess(`${memberToDelete.contactFullName} retiré du groupe.`);
+      setMemberToDelete(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Échec du retrait du membre.";
+      showError(message);
+    } finally {
+      setIsDeletingMember(false);
+    }
+  }
+
+  async function handleConfirmDeleteEvent() {
+    if (!eventToDelete) return;
+    setIsDeletingEvent(true);
+    try {
+      await deleteGroupEvent(groupId, eventToDelete.id);
+      setEvents((current) => current.filter((e) => e.id !== eventToDelete.id));
+      showSuccess(`"${eventToDelete.title}" supprimé.`);
+      setEventToDelete(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Échec de la suppression de l'événement.";
+      showError(message);
+    } finally {
+      setIsDeletingEvent(false);
+    }
+  }
+
   const [pausingEventId, setPausingEventId] = useState<number | null>(null);
 
   function loadAll() {
     setIsLoading(true);
-    Promise.all([fetchGroup(groupId), fetchGroupEvents(groupId), fetchGroupMembers(groupId)])
-      .then(([groupData, eventsData, membersData]) => {
+    Promise.all([
+      fetchGroup(groupId),
+      fetchGroupEvents(groupId),
+      fetchGroupMembers(groupId),
+      fetchGroupHistory(groupId),
+    ])
+      .then(([groupData, eventsData, membersData, historyData]) => {
         setGroup(groupData);
         setEvents(eventsData);
         setMembers(membersData);
+        setHistoryPayments(historyData.payments ?? []);
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : "Impossible de charger ce groupe.";
@@ -138,10 +240,14 @@ function GroupDetailContent() {
   async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const targetAmount = Number(eventTargetAmount);
+    const targetAmount = eventHasMoney ? Number(eventTargetAmount) : undefined;
 
-    if (!eventTitle.trim() || !targetAmount || !eventDate || selectedMemberIds.length === 0) {
-      setEventError("Titre, montant cible, date et au moins un membre sélectionné sont obligatoires.");
+    if (!eventTitle.trim() || (eventHasMoney && !targetAmount) || !eventDate || selectedMemberIds.length === 0) {
+      setEventError(
+        eventHasMoney
+          ? "Titre, montant cible, date et au moins un membre sélectionné sont obligatoires."
+          : "Titre, date et au moins un membre sélectionné sont obligatoires."
+      );
       return;
     }
     setEventError(null);
@@ -152,6 +258,7 @@ function GroupDetailContent() {
         title: eventTitle.trim(),
         description: eventDescription.trim() || undefined,
         targetAmount,
+        withdrawalFeeAmount: eventHasMoney && eventWithdrawalFee ? Number(eventWithdrawalFee) : undefined,
         eventDate,
         eventTime: eventTime || undefined,
         groupMemberIds: selectedMemberIds,
@@ -162,6 +269,8 @@ function GroupDetailContent() {
       setEventTitle("");
       setEventDescription("");
       setEventTargetAmount("");
+      setEventWithdrawalFee("");
+      setEventHasMoney(true);
       setEventDate("");
       setEventTime("");
       setEventRepetitionType("NONE");
@@ -180,7 +289,10 @@ function GroupDetailContent() {
     setEditingEvent(groupEvent);
     setEditTitle(groupEvent.title);
     setEditDescription(groupEvent.description ?? "");
-    setEditTargetAmount(String(groupEvent.targetAmount));
+    // null/undefined = événement sans argent : on laisse le champ vide.
+    setEditTargetAmount(
+      groupEvent.targetAmount != null ? String(groupEvent.targetAmount) : ""
+    );
     setEditDate(groupEvent.eventDate);
     // Le backend renvoie "HH:mm:ss" (LocalTime) ; l'input time attend "HH:mm".
     setEditTime(groupEvent.eventTime ? groupEvent.eventTime.slice(0, 5) : "");
@@ -192,9 +304,15 @@ function GroupDetailContent() {
     event.preventDefault();
     if (!editingEvent) return;
 
-    const targetAmount = Number(editTargetAmount);
-    if (!editTitle.trim() || !targetAmount || !editDate) {
-      setEditError("Titre, montant et date sont obligatoires.");
+    const isWithMoney = editingEvent.targetAmount != null;
+    const targetAmount = isWithMoney ? Number(editTargetAmount) : undefined;
+
+    if (!editTitle.trim() || !editDate) {
+      setEditError("Titre et date sont obligatoires.");
+      return;
+    }
+    if (isWithMoney && (!targetAmount || targetAmount < 0 || Number.isNaN(targetAmount))) {
+      setEditError("Le montant cible est obligatoire pour un événement avec argent.");
       return;
     }
     setEditError(null);
@@ -204,7 +322,9 @@ function GroupDetailContent() {
       const updated = await updateGroupEvent(groupId, editingEvent.id, {
         title: editTitle.trim(),
         description: editDescription.trim() || undefined,
-        targetAmount,
+        // On n'envoie targetAmount que si l'événement est (et reste) avec argent.
+        // Envoyer undefined pour un événement sans argent le laisse null côté backend.
+        targetAmount: isWithMoney ? targetAmount : undefined,
         eventDate: editDate,
         eventTime: editTime || undefined,
         repetitionType: editRepetitionType,
@@ -237,6 +357,20 @@ function GroupDetailContent() {
     }
   }
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const upcomingEvents = events.filter((e) => e.eventDate >= todayStr);
+  const pastEvents = events
+    .filter((e) => e.eventDate < todayStr)
+    .slice()
+    .sort((a, b) => (a.eventDate < b.eventDate ? 1 : -1));
+
+  const PAYMENT_METHOD_LABELS: Record<string, string> = {
+    CASH: "Espèces",
+    MOBILE_MONEY: "Mobile Money",
+    ORANGE_MONEY: "Orange Money",
+    CARD: "Carte bancaire",
+  };
+
   if (isLoading || !group) {
     return <FullPageSpinner label="Chargement du groupe..." />;
   }
@@ -251,13 +385,41 @@ function GroupDetailContent() {
         Retour aux groupes
       </Link>
 
-      <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{group.name}</h1>
-      {group.description && (
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{group.description}</p>
-      )}
-      <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-        Propriétaire : {group.owner.fullName}
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{group.name}</h1>
+          {group.description && (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{group.description}</p>
+          )}
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+            Propriétaire : {group.owner.fullName}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEditGroupName(group.name);
+              setEditGroupDescription(group.description ?? "");
+              setIsEditGroupModalOpen(true);
+            }}
+            aria-label="Modifier le groupe"
+            title="Modifier le groupe"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDeleteGroupModalOpen(true)}
+            aria-label="Supprimer le groupe"
+            title="Supprimer le groupe"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
 
       {/* Actions */}
       <div className="mt-6 flex flex-wrap gap-2">
@@ -301,29 +463,40 @@ function GroupDetailContent() {
                   <p className="font-medium text-slate-900 dark:text-white">{member.contactFullName}</p>
                   <p className="text-xs text-slate-400">{member.contactEmail}</p>
                 </div>
-                {member.registeredUser && (
-                  <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 dark:bg-teal-950 dark:text-teal-300">
-                    Inscrit
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {member.registeredUser && (
+                    <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 dark:bg-teal-950 dark:text-teal-300">
+                      Inscrit
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setMemberToDelete(member)}
+                    aria-label="Retirer ce membre"
+                    title="Retirer ce membre"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </section>
 
-      {/* Événements */}
+      {/* Événements à venir */}
       <section className="mt-8">
-        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">Événements de cotisation</h2>
+        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">Événements à venir</h2>
 
-        {events.length === 0 ? (
+        {upcomingEvents.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-            Aucun événement pour l'instant.
+            Aucun événement à venir pour l'instant.
           </div>
         ) : (
           <ul className="space-y-3">
-            {events.map((groupEvent) => {
-              const isUpcoming = new Date(groupEvent.eventDate) > new Date();
+            {upcomingEvents.map((groupEvent) => {
+              const isUpcoming = true;
               const isRecurring = groupEvent.repetitionType !== "NONE";
 
               return (
@@ -353,8 +526,10 @@ function GroupDetailContent() {
                       </div>
                       <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                         Échéance : {groupEvent.eventDate}
-                        {groupEvent.eventTime ? ` à ${groupEvent.eventTime.slice(0, 5)}` : ""} — Objectif :{" "}
-                        {formatAmount(groupEvent.targetAmount)}
+                        {groupEvent.eventTime ? ` à ${groupEvent.eventTime.slice(0, 5)}` : ""}
+                        {groupEvent.targetAmount != null
+                          ? ` — Objectif : ${formatAmount(groupEvent.targetAmount)}`
+                          : " — Info (sans argent)"}
                       </p>
                     </div>
                     <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
@@ -390,10 +565,94 @@ function GroupDetailContent() {
                         )}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setEventToDelete(groupEvent)}
+                      aria-label="Supprimer l'événement"
+                      title="Supprimer l'événement"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 </li>
               );
             })}
+          </ul>
+        )}
+      </section>
+
+
+      {/* Historique du groupe */}
+      <section className="mt-10">
+        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">Historique du groupe</h2>
+
+        <h3 className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-300">Événements passés</h3>
+        {pastEvents.length === 0 ? (
+          <div className="mb-6 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            Aucun événement passé.
+          </div>
+        ) : (
+          <ul className="mb-6 space-y-2">
+            {pastEvents.map((groupEvent) => (
+              <li key={groupEvent.id}>
+                <Link
+                  href={`/groups/${groupId}/events/${groupEvent.id}`}
+                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 transition hover:opacity-80 dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">{groupEvent.title}</p>
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                      Échéance : {groupEvent.eventDate}
+                      {groupEvent.targetAmount != null
+                        ? ` — Objectif : ${formatAmount(groupEvent.targetAmount)}`
+                        : " — Info (sans argent)"}
+                    </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <h3 className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-300">Paiements enregistrés</h3>
+        {historyPayments.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            Aucun paiement enregistré pour ce groupe.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {historyPayments.map((payment) => (
+              <li
+                key={payment.id}
+                className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">
+                      {payment.memberFullName ?? "Membre"} — {formatAmount(payment.amountPaid)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                      {payment.eventTitle ?? "Événement"}
+                      {" · "}
+                      {PAYMENT_METHOD_LABELS[payment.paymentMethod] ?? payment.paymentMethod}
+                      {" · "}
+                      {new Date(payment.paidAt).toLocaleString("fr-FR")}
+                      {payment.transactionRef ? ` · Réf. ${payment.transactionRef}` : ""}
+                    </p>
+                  </div>
+                  {payment.eventId != null && (
+                    <Link
+                      href={`/groups/${groupId}/events/${payment.eventId}`}
+                      className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+                    >
+                      Voir l&apos;événement
+                    </Link>
+                  )}
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </section>
@@ -487,20 +746,70 @@ function GroupDetailContent() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Montant cible (FCFA)
-              </label>
-              <input
-                type="number"
-                min={0}
-                placeholder="Ex : 50000"
-                value={eventTargetAmount}
-                onChange={(e) => setEventTargetAmount(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
+          <div>
+            <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Type de rappel
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEventHasMoney(true)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  eventHasMoney
+                    ? "border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                    : "border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                }`}
+              >
+                Avec argent (cotisation)
+              </button>
+              <button
+                type="button"
+                onClick={() => setEventHasMoney(false)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  !eventHasMoney
+                    ? "border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                    : "border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                }`}
+              >
+                Sans argent (info)
+              </button>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {eventHasMoney && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Montant cible (FCFA)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="Ex : 50000"
+                  value={eventTargetAmount}
+                  onChange={(e) => setEventTargetAmount(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            )}
+            {eventHasMoney && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Frais de retrait <span className="font-normal text-slate-400">(optionnel)</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="Ex : 300"
+                  value={eventWithdrawalFee}
+                  onChange={(e) => setEventWithdrawalFee(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Un membre qui envoie ce montant en plus n'est pas compté en surplus.
+                </p>
+              </div>
+            )}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
                 Date de l'événement
@@ -615,19 +924,21 @@ function GroupDetailContent() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Montant cible (FCFA)
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={editTargetAmount}
-                onChange={(e) => setEditTargetAmount(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
+          <div className={`grid gap-3 ${editingEvent?.targetAmount != null ? "grid-cols-3" : "grid-cols-2"}`}>
+            {editingEvent?.targetAmount != null && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Montant cible (FCFA)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={editTargetAmount}
+                  onChange={(e) => setEditTargetAmount(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            )}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
                 Date
@@ -684,6 +995,87 @@ function GroupDetailContent() {
           </button>
         </form>
       </Modal>
+
+      <Modal
+        isOpen={isEditGroupModalOpen}
+        onClose={() => {
+          setIsEditGroupModalOpen(false);
+          setEditGroupError(null);
+        }}
+        title="Modifier le groupe"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Nom du groupe
+            </label>
+            <input
+              type="text"
+              value={editGroupName}
+              onChange={(e) => setEditGroupName(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Description <span className="font-normal text-slate-400">(optionnel)</span>
+            </label>
+            <textarea
+              value={editGroupDescription}
+              onChange={(e) => setEditGroupDescription(e.target.value)}
+              rows={2}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+          {editGroupError && (
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+              {editGroupError}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={handleSaveGroup}
+            disabled={isSavingGroup}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+          >
+            {isSavingGroup && <Spinner size={16} />}
+            Enregistrer
+          </button>
+        </div>
+      </Modal>
+
+      <ConfirmModal
+        isOpen={isDeleteGroupModalOpen}
+        title="Supprimer ce groupe ?"
+        description={`Cette action est irréversible : "${group?.name ?? ""}" et tous ses membres, événements et paiements associés seront définitivement supprimés.`}
+        confirmLabel="Supprimer"
+        isDangerous
+        isLoading={isDeletingGroup}
+        onConfirm={handleConfirmDeleteGroup}
+        onCancel={() => setIsDeleteGroupModalOpen(false)}
+      />
+
+      <ConfirmModal
+        isOpen={!!memberToDelete}
+        title="Retirer ce membre ?"
+        description={`"${memberToDelete?.contactFullName ?? ""}" sera retiré du groupe, avec son historique de paiement pour ce groupe.`}
+        confirmLabel="Retirer"
+        isDangerous
+        isLoading={isDeletingMember}
+        onConfirm={handleConfirmDeleteMember}
+        onCancel={() => setMemberToDelete(null)}
+      />
+
+      <ConfirmModal
+        isOpen={!!eventToDelete}
+        title="Supprimer cet événement ?"
+        description={`"${eventToDelete?.title ?? ""}" et le suivi de tous les membres pour cet événement seront définitivement supprimés.`}
+        confirmLabel="Supprimer"
+        isDangerous
+        isLoading={isDeletingEvent}
+        onConfirm={handleConfirmDeleteEvent}
+        onCancel={() => setEventToDelete(null)}
+      />
     </main>
   );
 }

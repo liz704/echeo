@@ -9,6 +9,8 @@ import type {
   GroupEvent,
   GroupEventCreatePayload,
   GroupEventUpdatePayload,
+  EventDetailResponse,
+  GroupHistoryResponse,
   GroupMember,
   GroupSummary,
   LoginPayload,
@@ -80,6 +82,11 @@ export async function createReminder(payload: ReminderPayload): Promise<Reminder
   return response.data;
 }
 
+export async function updateReminder(id: number, payload: ReminderPayload): Promise<ReminderResponse> {
+  const response = await apiClient.put<ReminderResponse>(`/reminders/${id}`, payload);
+  return response.data;
+}
+
 export async function markReminderCompleted(id: number): Promise<ReminderResponse> {
   const response = await apiClient.patch<ReminderResponse>(`/reminders/${id}/complete`);
   return response.data;
@@ -89,10 +96,28 @@ export async function deleteReminder(id: number): Promise<void> {
   await apiClient.delete(`/reminders/${id}`);
 }
 
+export async function deleteAllReminderHistory(): Promise<void> {
+  await apiClient.delete("/reminders/history");
+}
+
 // --- Paiement public (sans JWT) -----------------------------------------
 
 export async function fetchPublicPaymentDetails(token: string): Promise<PublicPaymentDetails> {
   const response = await apiClient.get<PublicPaymentDetails>(`/public/pay/${token}`);
+  return response.data;
+}
+
+export async function acknowledgePublicReminder(
+  token: string
+): Promise<{ eventTitle: string; memberFullName: string; status: string; seenAt: string | null }> {
+  const response = await apiClient.get(`/public/ack/${token}`);
+  return response.data;
+}
+
+export async function completePublicReminder(
+  token: string
+): Promise<{ title: string; completed: boolean }> {
+  const response = await apiClient.get(`/public/reminders/complete/${token}`);
   return response.data;
 }
 
@@ -108,6 +133,11 @@ export async function submitPublicPayment(
 
 export async function fetchMyPaymentStatuses(): Promise<EventMemberStatusResult[]> {
   const response = await apiClient.get<EventMemberStatusResult[]>("/payments/me");
+  return response.data;
+}
+
+export async function fetchManagedPaymentStatuses(): Promise<EventMemberStatusResult[]> {
+  const response = await apiClient.get<EventMemberStatusResult[]>("/payments/managed");
   return response.data;
 }
 
@@ -158,6 +188,19 @@ export async function fetchGroup(groupId: number): Promise<GroupSummary> {
   return response.data;
 }
 
+export async function updateGroup(groupId: number, payload: GroupCreatePayload): Promise<GroupSummary> {
+  const response = await apiClient.put<GroupSummary>(`/groups/${groupId}`, payload);
+  return response.data;
+}
+
+export async function deleteGroup(groupId: number): Promise<void> {
+  await apiClient.delete(`/groups/${groupId}`);
+}
+
+export async function removeGroupMember(groupId: number, memberId: number): Promise<void> {
+  await apiClient.delete(`/groups/${groupId}/members/${memberId}`);
+}
+
 export async function addGroupMember(groupId: number, payload: AddGroupMemberPayload): Promise<GroupMember> {
   const response = await apiClient.post<GroupMember>(`/groups/${groupId}/members`, payload);
   return response.data;
@@ -173,12 +216,21 @@ export async function fetchGroupEvents(groupId: number): Promise<GroupEvent[]> {
   return response.data;
 }
 
+export async function fetchGroupHistory(groupId: number): Promise<GroupHistoryResponse> {
+  const response = await apiClient.get<GroupHistoryResponse>(`/groups/${groupId}/history`);
+  return response.data;
+}
+
 export async function createGroupEvent(
   groupId: number,
   payload: GroupEventCreatePayload
 ): Promise<GroupEvent> {
   const response = await apiClient.post<GroupEvent>(`/groups/${groupId}/events`, payload);
   return response.data;
+}
+
+export async function deleteGroupEvent(groupId: number, eventId: number): Promise<void> {
+  await apiClient.delete(`/groups/${groupId}/events/${eventId}`);
 }
 
 export async function updateGroupEvent(
@@ -197,6 +249,16 @@ export async function pauseGroupEvent(groupId: number, eventId: number): Promise
 
 export async function resumeGroupEvent(groupId: number, eventId: number): Promise<GroupEvent> {
   const response = await apiClient.patch<GroupEvent>(`/groups/${groupId}/events/${eventId}/resume`);
+  return response.data;
+}
+
+export async function fetchEventDetail(
+  groupId: number,
+  eventId: number
+): Promise<EventDetailResponse> {
+  const response = await apiClient.get<EventDetailResponse>(
+    `/groups/${groupId}/events/${eventId}/detail`
+  );
   return response.data;
 }
 

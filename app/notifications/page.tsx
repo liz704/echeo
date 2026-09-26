@@ -179,13 +179,15 @@ function NotificationsContent() {
                     key={notification.id}
                     className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="flex items-start gap-3">
                         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400">
                           <TypeIcon className="h-4 w-4" />
                         </span>
-                        <div>
-                          <p className="text-sm text-slate-800 dark:text-slate-200">{notification.messageContent}</p>
+                        <div className="min-w-0">
+                          <p className="break-words text-sm text-slate-800 dark:text-slate-200">
+                            {notification.messageContent}
+                          </p>
                           {notification.sentAt && (
                             <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                               Envoyée le {new Date(notification.sentAt).toLocaleString("fr-FR")}
@@ -193,9 +195,9 @@ function NotificationsContent() {
                           )}
                         </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-2 self-start sm:self-auto">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${statusConfig.classes}`}
+                          className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${statusConfig.classes}`}
                         >
                           <StatusIcon className="h-3.5 w-3.5" />
                           {statusConfig.label}
@@ -204,7 +206,7 @@ function NotificationsContent() {
                           type="button"
                           onClick={() => setPendingDelete(notification)}
                           aria-label="Supprimer"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>

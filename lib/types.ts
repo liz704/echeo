@@ -8,9 +8,12 @@ export type PaymentStatus =
   | "PARTIALLY_PAID"
   | "PAID"
   | "SURPLUS"
-  | "OVERDUE";
+  | "OVERDUE"
+  // Statuts d'un événement de groupe SANS argent (accusé de lecture).
+  | "NOT_SEEN"
+  | "SEEN";
 
-export type PaymentMethod = "CASH" | "MOBILE_MONEY" | "CARD";
+export type PaymentMethod = "CASH" | "MOBILE_MONEY" | "ORANGE_MONEY" | "CARD";
 
 export interface AuthResponse {
   token: string;
@@ -136,14 +139,15 @@ export interface PaymentHistoryEntry {
 // imbriquée) — utilisée par /payments/me et /public/pay/{token} (POST).
 export interface EventMemberStatusResult {
   id: number;
-  requiredAmount: number;
-  paidAmount: number;
+  requiredAmount?: number;
+  paidAmount?: number;
   status: PaymentStatus;
+  seenAt?: string;
   event: {
     id: number;
     title: string;
     description?: string;
-    targetAmount: number;
+    targetAmount?: number;
     eventDate: string;
   };
   groupMember: {                    // ← changé de "member" à "groupMember"
@@ -194,7 +198,8 @@ export interface GroupEvent {
   id: number;
   title: string;
   description?: string;
-  targetAmount: number;
+  // Absent = événement sans argent (voir GroupEventCreatePayload).
+  targetAmount?: number;
   eventDate: string;
   // Heure réglée par le créateur pour les relances de cet événement
   // (format "HH:mm:ss", tel que renvoyé par le backend). Absente = 08:00
@@ -208,7 +213,11 @@ export interface GroupEvent {
 export interface GroupEventCreatePayload {
   title: string;
   description?: string;
-  targetAmount: number;
+  // Absent = événement sans argent (simple info diffusée, suivi "vu/pas vu").
+  targetAmount?: number;
+  // Optionnel : frais de retrait anticipés (Mobile Money/Orange Money) à
+  // ajouter au montant requis sans que ça compte comme un surplus.
+  withdrawalFeeAmount?: number;
   eventDate: string;
   eventTime?: string;
   groupMemberIds: number[];
@@ -218,7 +227,8 @@ export interface GroupEventCreatePayload {
 export interface GroupEventUpdatePayload {
   title: string;
   description?: string;
-  targetAmount: number;
+  targetAmount?: number;
+  withdrawalFeeAmount?: number;
   eventDate: string;
   eventTime?: string;
   repetitionType: RepetitionType;
@@ -229,4 +239,57 @@ export interface PaymentToken {
   tokenUuid: string;
   expiresAt: string;
   used: boolean;
+}
+
+
+export interface GroupPaymentHistoryItem {
+  id: number;
+  amountPaid: number;
+  paymentMethod: PaymentMethod;
+  transactionRef?: string;
+  paidAt: string;
+  eventId?: number;
+  eventTitle?: string;
+  eventMemberStatusId?: number;
+  memberFullName?: string;
+}
+
+export interface GroupHistoryResponse {
+  pastEvents: GroupEvent[];
+  payments: GroupPaymentHistoryItem[];
+}
+
+export interface EventMemberPaymentEntry {
+  id: number;
+  amountPaid: number;
+  paymentMethod: PaymentMethod;
+  transactionRef?: string;
+  paidAt: string;
+}
+
+export interface EventMemberDetailItem {
+  eventMemberStatusId: number;
+  groupMemberId?: number;
+  memberFullName?: string;
+  memberEmail?: string;
+  status: PaymentStatus;
+  requiredAmount?: number;
+  paidAmount?: number;
+  seenAt?: string;
+  payments: EventMemberPaymentEntry[];
+}
+
+export interface EventDetailResponse {
+  eventId: number;
+  groupId: number;
+  title: string;
+  description?: string;
+  targetAmount?: number;
+  withdrawalFeeAmount?: number;
+  eventDate: string;
+  eventTime?: string;
+  repetitionType: RepetitionType;
+  paused: boolean;
+  hasMoney: boolean;
+  members: EventMemberDetailItem[];
 }

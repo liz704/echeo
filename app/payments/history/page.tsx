@@ -1,13 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ChevronDown, ChevronUp, Trash2, Wallet } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { AppNavbar } from "@/components/AppNavbar";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { ConfirmModal } from "@/components/ui/Modal";
 import { useToast } from "@/contexts/ToastContext";
-import { deletePaymentHistoryEntry, fetchMyPaymentStatuses, fetchPaymentHistoryFor } from "@/lib/endpoints";
+import { useLocale } from "@/contexts/LocaleContext";
+import {
+  deleteAllPaymentHistoryFor,
+  deletePaymentHistoryEntry,
+  fetchManagedPaymentStatuses,
+  fetchMyPaymentStatuses,
+  fetchPaymentHistoryFor,
+} from "@/lib/endpoints";
 import type { EventMemberStatusResult, PaymentHistoryEntry, PaymentStatus } from "@/lib/types";
 
 const STATUS_LABELS: Record<PaymentStatus, string> = {
@@ -16,6 +24,8 @@ const STATUS_LABELS: Record<PaymentStatus, string> = {
   PAID: "Payé",
   SURPLUS: "Surplus",
   OVERDUE: "En retard",
+  NOT_SEEN: "Pas encore vu",
+  SEEN: "Vu",
 };
 
 const STATUS_CLASSES: Record<PaymentStatus, string> = {
@@ -24,27 +34,42 @@ const STATUS_CLASSES: Record<PaymentStatus, string> = {
   PAID: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   SURPLUS: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   OVERDUE: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+  NOT_SEEN: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  SEEN: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
 };
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: "Espèces",
   MOBILE_MONEY: "Mobile Money",
+  ORANGE_MONEY: "Orange Money",
   CARD: "Carte bancaire",
 };
 
-function formatAmount(value: number): string {
+function formatAmount(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "—";
   return new Intl.NumberFormat("fr-FR").format(value) + " FCFA";
 }
 
-function PaymentStatusRow({ status }: { status: EventMemberStatusResult }) {
+function PaymentStatusRow({
+  status,
+  showMember,
+}: {
+  status: EventMemberStatusResult;
+  showMember?: boolean;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [history, setHistory] = useState<PaymentHistoryEntry[] | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [isClearingAll, setIsClearingAll] = useState(false);
   const { showSuccess, showError } = useToast();
 
+  const hasMoney = status.event?.targetAmount != null || status.requiredAmount != null;
+
   async function toggleExpand() {
+    if (!hasMoney) return;
     const nextExpanded = !isExpanded;
     setIsExpanded(nextExpanded);
 
@@ -78,44 +103,85 @@ function PaymentStatusRow({ status }: { status: EventMemberStatusResult }) {
     }
   }
 
+  async function handleClearAll() {
+    setIsClearingAll(true);
+    try {
+      await deleteAllPaymentHistoryFor(status.id);
+      setHistory([]);
+      showSuccess("Historique des versements vidé.");
+      setConfirmClearAll(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Échec de la suppression.";
+      showError(message);
+    } finally {
+      setIsClearingAll(false);
+    }
+  }
+
   return (
-    <li className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <li className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
       <button
         type="button"
         onClick={toggleExpand}
-        className="flex w-full flex-col gap-2 p-4 text-left sm:flex-row sm:items-center sm:justify-between"
+        className={`flex w-full items-center justify-between gap-3 p-4 text-left transition ${
+          hasMoney ? "hover:bg-slate-50 dark:hover:bg-slate-800/50" : "cursor-default"
+        }`}
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-medium text-slate-900 dark:text-white">{status.event.title}</p>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[status.status]}`}>
-              {STATUS_LABELS[status.status]}
+            <p className="font-medium text-slate-900 dark:text-white">
+              {status.event?.title ?? "Événement"}
+            </p>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                STATUS_CLASSES[status.status] ?? STATUS_CLASSES.PENDING
+              }`}
+            >
+              {STATUS_LABELS[status.status] ?? status.status}
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-            Échéance : {status.event.eventDate}
+            {showMember && status.groupMember?.contactFullName
+              ? `${status.groupMember.contactFullName} · `
+              : ""}
+            {status.event?.eventDate ? `Échéance ${status.event.eventDate}` : ""}
+            {!hasMoney ? " · Info (sans argent)" : ""}
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="text-right text-sm">
-            <p className="text-slate-500 dark:text-slate-400">
-              {formatAmount(status.paidAmount)} / {formatAmount(status.requiredAmount)}
-            </p>
-          </div>
-          {isExpanded ? (
-            <ChevronUp className="h-4 w-4 text-slate-400" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-slate-400" />
+        <div className="flex shrink-0 items-center gap-3">
+          {hasMoney && (
+            <div className="text-right text-sm">
+              <p className="text-slate-500 dark:text-slate-400">
+                {formatAmount(status.paidAmount)} / {formatAmount(status.requiredAmount)}
+              </p>
+            </div>
           )}
+          {hasMoney ? (
+            isExpanded ? (
+              <ChevronUp className="h-4 w-4 text-slate-400" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-slate-400" />
+            )
+          ) : null}
         </div>
       </button>
 
-      {isExpanded && (
+      {isExpanded && hasMoney && (
         <div className="border-t border-slate-100 p-4 dark:border-slate-800">
           {isLoadingHistory ? (
             <Spinner size={16} label="Chargement des versements..." />
           ) : history && history.length > 0 ? (
+            <>
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setConfirmClearAll(true)}
+                className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+              >
+                Tout supprimer
+              </button>
+            </div>
             <ul className="space-y-2">
               {history.map((entry) => (
                 <li
@@ -125,6 +191,8 @@ function PaymentStatusRow({ status }: { status: EventMemberStatusResult }) {
                   <span className="text-slate-600 dark:text-slate-300">
                     {PAYMENT_METHOD_LABELS[entry.paymentMethod] ?? entry.paymentMethod}
                     {entry.transactionRef ? ` — Réf. ${entry.transactionRef}` : ""}
+                    {" · "}
+                    {new Date(entry.paidAt).toLocaleString("fr-FR")}
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-slate-900 dark:text-white">
@@ -145,8 +213,19 @@ function PaymentStatusRow({ status }: { status: EventMemberStatusResult }) {
                 </li>
               ))}
             </ul>
+            </>
           ) : (
             <p className="text-sm text-slate-400">Aucun versement enregistré pour cette échéance.</p>
+          )}
+          {status.event?.id != null && (
+            <div className="mt-3">
+              <Link
+                href={`/groups`}
+                className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+              >
+                Gérer dans les groupes
+              </Link>
+            </div>
           )}
         </div>
       )}
@@ -154,65 +233,106 @@ function PaymentStatusRow({ status }: { status: EventMemberStatusResult }) {
       <ConfirmModal
         isOpen={!!pendingDeleteId}
         title="Supprimer cette entrée ?"
-        description="Cette action supprime uniquement la ligne d'historique — elle ne modifie pas le montant déjà payé ni le statut de l'échéance."
+        description="Cette action supprime uniquement la ligne d'historique — elle n'annule pas le paiement ni ne recalcule le montant payé."
         confirmLabel="Supprimer"
-        isDangerous
+        cancelLabel="Annuler"
         isLoading={isDeleting}
         onConfirm={handleConfirmDelete}
         onCancel={() => setPendingDeleteId(null)}
+      />
+      <ConfirmModal
+        isOpen={confirmClearAll}
+        title="Tout supprimer ?"
+        description="Tous les versements de cette échéance seront retirés de l'historique. Cela n'annule pas les montants déjà comptabilisés."
+        confirmLabel="Tout supprimer"
+        cancelLabel="Annuler"
+        isDangerous
+        isLoading={isClearingAll}
+        onConfirm={handleClearAll}
+        onCancel={() => setConfirmClearAll(false)}
       />
     </li>
   );
 }
 
 function PaymentHistoryContent() {
-  const { showError } = useToast();
-  const [statuses, setStatuses] = useState<EventMemberStatusResult[]>([]);
+  const { t } = useLocale();
+  const [myStatuses, setMyStatuses] = useState<EventMemberStatusResult[]>([]);
+  const [managedStatuses, setManagedStatuses] = useState<EventMemberStatusResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { showError } = useToast();
 
   useEffect(() => {
-    let isMounted = true;
-
-    fetchMyPaymentStatuses()
-      .then((data) => {
-        if (isMounted) setStatuses(data);
+    setIsLoading(true);
+    Promise.all([fetchMyPaymentStatuses(), fetchManagedPaymentStatuses()])
+      .then(([mine, managed]) => {
+        setMyStatuses(mine ?? []);
+        setManagedStatuses(managed ?? []);
       })
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Impossible de charger tes cotisations.";
+        const message = error instanceof Error ? error.message : "Impossible de charger les paiements.";
         showError(message);
       })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      .finally(() => setIsLoading(false));
+  }, [showError]);
 
   if (isLoading) {
-    return <FullPageSpinner label="Chargement de tes cotisations..." />;
+    return <FullPageSpinner label="Chargement des paiements..." />;
   }
 
+  // Côté propriétaire : on n'affiche pas en double les échéances où tu es
+  // aussi le membre payeur (déjà dans "{t("payments.myDues")}").
+  const myIds = new Set(myStatuses.map((s) => s.id));
+  const managedOnly = managedStatuses.filter((s) => !myIds.has(s.id));
+
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       <div className="mb-6 flex items-center gap-2">
         <Wallet className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Mes paiements</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{t("payments.title")}</h1>
       </div>
 
-      {statuses.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-          Tu n'as encore aucune cotisation de groupe. Clique sur une ligne pour voir le détail des versements.
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {statuses.map((status) => (
-            <PaymentStatusRow key={status.id} status={status} />
-          ))}
-        </ul>
-      )}
+      <section className="mb-10">
+        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
+          {t("payments.myDues")}
+        </h2>
+        <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+          {t("payments.myDuesHint")}
+        </p>
+        {myStatuses.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            Aucune cotisation personnelle. Si tu es plutôt organisateur, regarde la section
+            ci-dessous.
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {myStatuses.map((status) => (
+              <PaymentStatusRow key={status.id} status={status} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
+          {t("payments.managed")}
+        </h2>
+        <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+          {t("payments.managedHint")}
+        </p>
+        {managedOnly.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            Aucune échéance dans tes groupes pour l&apos;instant. Crée un événement avec
+            argent et des membres pour les voir ici.
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {managedOnly.map((status) => (
+              <PaymentStatusRow key={status.id} status={status} showMember />
+            ))}
+          </ul>
+        )}
+      </section>
     </main>
   );
 }

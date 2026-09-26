@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, Wallet, AlertTriangle, Smartphone, Banknote, CreditCard } from "lucide-react";
+import { CheckCircle2, Wallet, AlertTriangle, Smartphone, CreditCard } from "lucide-react";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { fetchPublicPaymentDetails, submitPublicPayment } from "@/lib/endpoints";
 import type { PaymentMethod, PublicPaymentDetails, PublicPaymentResult } from "@/lib/types";
 
 const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string; Icon: typeof Wallet }[] = [
   { value: "MOBILE_MONEY", label: "Mobile Money", Icon: Smartphone },
-  { value: "CASH", label: "Espèces", Icon: Banknote },
+  { value: "ORANGE_MONEY", label: "Orange Money", Icon: Wallet },
   { value: "CARD", label: "Carte bancaire", Icon: CreditCard },
 ];
 
