@@ -13,7 +13,8 @@ const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string; Icon: typeo
   { value: "CARD", label: "Carte bancaire", Icon: CreditCard },
 ];
 
-function formatAmount(value: number): string {
+function formatAmount(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "—";
   return new Intl.NumberFormat("fr-FR").format(value) + " FCFA";
 }
 
