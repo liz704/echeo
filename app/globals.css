@@ -51,3 +51,14 @@ textarea::placeholder {
 .animate-toast-in {
   animation: toast-in 0.25s ease-out;
 }
+
+
+/* Mobile: évite que le fond “rebondisse” et bloque le scroll des modales */
+html {
+  overscroll-behavior-y: none;
+}
+
+body {
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
