@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Lock, LogIn, Mail } from "lucide-react";
+import { Eye, EyeOff, Lock, LogIn, Mail } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useToast } from "@/contexts/ToastContext";
@@ -17,6 +17,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
 
@@ -66,13 +67,13 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-teal-700 dark:text-teal-400">{t("appName")}</h1>
           <p className="mt-1 text-xs text-slate-400">{t("appTagline")}</p>
-          <h2 className="mt-6 text-lg font-semibold text-slate-900 dark:text-white">
+          <p className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
             {t("auth.welcome")}
-          </h2>
+          </p>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("auth.welcomeHint")}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
               {t("auth.email")}
@@ -95,12 +96,20 @@ export default function LoginPage() {
             <div className="relative">
               <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
-                className="w-full rounded-xl border border-slate-300 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className="w-full rounded-xl border border-slate-300 py-2.5 pl-10 pr-10 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
           </div>
 
@@ -114,7 +123,7 @@ export default function LoginPage() {
           </div>
 
           {fieldError && (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
               {fieldError}
             </p>
           )}
@@ -122,9 +131,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
           >
-            {isSubmitting ? <Spinner size={16} /> : <LogIn className="h-4 w-4" />}
+            {isSubmitting ? <Spinner size={18} /> : <LogIn className="h-4 w-4" />}
             {t("auth.login")}
           </button>
         </form>
