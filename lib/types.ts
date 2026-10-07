@@ -92,6 +92,10 @@ export interface ApiErrorBody {
 // --- Profil, mot de passe, historiques (ajouts audit) ---------------------
 
 export interface UserProfile {
+  preferredLocale?: string;
+  weekPlanEnabled?: boolean;
+  weekPlanDay?: number;
+  weekPlanSendTime?: string;
   id: number;
   fullName: string;
   email: string;
@@ -101,6 +105,10 @@ export interface UserProfile {
 }
 
 export interface UpdateProfilePayload {
+  preferredLocale?: string;
+  weekPlanEnabled?: boolean;
+  weekPlanDay?: number;
+  weekPlanSendTime?: string;
   fullName: string;
   phone?: string;
 }

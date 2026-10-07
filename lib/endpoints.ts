@@ -286,3 +286,12 @@ export async function generatePaymentLink(eventMemberStatusId: number): Promise<
   const response = await apiClient.post<PaymentToken>(`/payments/${eventMemberStatusId}/token`);
   return response.data;
 }
+
+export async function updateWeekPlanSettings(payload: {
+  enabled: boolean;
+  day: number;
+  sendTime: string;
+}): Promise<UserProfile> {
+  const response = await apiClient.put<UserProfile>("/users/me/week-plan", payload);
+  return response.data;
+}

@@ -6,6 +6,7 @@ import { CheckCircle2, Wallet, AlertTriangle, Smartphone, CreditCard } from "luc
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { fetchPublicPaymentDetails, submitPublicPayment } from "@/lib/endpoints";
 import type { PaymentMethod, PublicPaymentDetails, PublicPaymentResult } from "@/lib/types";
+import { useLocale } from "@/contexts/LocaleContext";
 
 const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string; Icon: typeof Wallet }[] = [
   { value: "MOBILE_MONEY", label: "Mobile Money", Icon: Smartphone },
@@ -19,6 +20,7 @@ function formatAmount(value: number | null | undefined): string {
 }
 
 export default function PublicPaymentPage() {
+  const { t } = useLocale();
   const params = useParams<{ token: string }>();
   const token = params.token;
 
@@ -81,7 +83,7 @@ export default function PublicPaymentPage() {
   }
 
   if (isLoading) {
-    return <FullPageSpinner label="Chargement de votre échéance..." />;
+    return <FullPageSpinner label={t("payments.loadingDue")} />;
   }
 
   if (loadError || !details) {

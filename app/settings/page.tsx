@@ -20,7 +20,7 @@ import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/contexts/ToastContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocale } from "@/contexts/LocaleContext";
-import { changeMyPassword, fetchMyProfile, updateMyProfile } from "@/lib/endpoints";
+import { changeMyPassword, fetchMyProfile, updateMyProfile, updateWeekPlanSettings } from "@/lib/endpoints";
 import type { UserProfile } from "@/lib/types";
 
 function getInitials(name: string): string {
@@ -40,6 +40,11 @@ function SettingsContent() {
 
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+  const [preferredLocale, setPreferredLocale] = useState("fr");
+  const [weekPlanEnabled, setWeekPlanEnabled] = useState(false);
+  const [weekPlanDay, setWeekPlanDay] = useState(1);
+  const [weekPlanSendTime, setWeekPlanSendTime] = useState("08:00");
+  const [isSavingWeekPlan, setIsSavingWeekPlan] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
@@ -60,6 +65,10 @@ function SettingsContent() {
         if (isMounted) {
           setProfile(data);
           setFullName(data.fullName);
+          setPreferredLocale(data.preferredLocale === "en" ? "en" : "fr");
+          setWeekPlanEnabled(!!data.weekPlanEnabled);
+          setWeekPlanDay(data.weekPlanDay ?? 1);
+          setWeekPlanSendTime((data.weekPlanSendTime || "08:00").slice(0, 5));
           setPhone(data.phone ?? "");
         }
       } catch (error) {
@@ -79,8 +88,8 @@ function SettingsContent() {
 
   const profileDirty = useMemo(() => {
     if (!profile) return false;
-    return fullName.trim() !== profile.fullName || (phone.trim() || "") !== (profile.phone ?? "");
-  }, [profile, fullName, phone]);
+    return fullName.trim() !== profile.fullName || (phone.trim() || "") !== (profile.phone ?? "") || preferredLocale !== (profile.preferredLocale === "en" ? "en" : "fr");
+  }, [profile, fullName, phone, preferredLocale]);
 
   const passwordStrength = useMemo(() => {
     if (!newPassword) return 0;
@@ -107,7 +116,7 @@ function SettingsContent() {
         phone: phone.trim() || undefined,
       });
       setProfile(updated);
-      showSuccess("Profil mis à jour.");
+      showSuccess(t("settings.profileUpdated"));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Échec de la mise à jour du profil.";
       setProfileError(message);
@@ -139,7 +148,7 @@ function SettingsContent() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
-      showSuccess("Mot de passe modifié.");
+      showSuccess(t("settings.passwordChanged"));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Échec du changement de mot de passe.";
       setPasswordError(message);
@@ -150,7 +159,7 @@ function SettingsContent() {
   }
 
   if (isLoading || !profile) {
-    return <FullPageSpinner label="Chargement de vos paramètres..." />;
+    return <FullPageSpinner label={t("settings.loadingSettings")} />;
   }
 
   const memberSince = profile.createdAt
@@ -280,21 +289,132 @@ function SettingsContent() {
               className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSavingProfile ? <Spinner size={16} /> : profileDirty ? <Save className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-              {profileDirty ? "Enregistrer" : "À jour"}
+              {profileDirty ? t("common.save") : t("common.upToDate")}
             </button>
           </div>
         </form>
       </section>
 
-      {/* Apparence */}
+
+      {/* Langue des e-mails */}
+      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-5">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            {t("settings.emailLanguage")}
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t("settings.emailLanguageHint")}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setPreferredLocale("fr")}
+            className={`rounded-xl border-2 px-4 py-3 text-sm font-medium transition ${
+              preferredLocale === "fr"
+                ? "border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200"
+                : "border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300"
+            }`}
+          >
+            {t("settings.languageFr")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreferredLocale("en")}
+            className={`rounded-xl border-2 px-4 py-3 text-sm font-medium transition ${
+              preferredLocale === "en"
+                ? "border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-200"
+                : "border-slate-200 text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:text-slate-300"
+            }`}
+          >
+            {t("settings.languageEn")}
+          </button>
+        </div>
+        <p className="mt-3 text-xs text-slate-400">
+          {t("settings.emailLanguageSaveHint")}
+        </p>
+      </section>
+
+      
+      {/* Planification hebdomadaire */}
+      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-4">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            {t("weekPlan.settingsTitle")}
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t("weekPlan.settingsHint")}
+          </p>
+        </div>
+        <label className="mb-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <input
+            type="checkbox"
+            checked={weekPlanEnabled}
+            onChange={(e) => setWeekPlanEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600"
+          />
+          {t("weekPlan.enabled")}
+        </label>
+        <div className="mb-3 grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">{t("weekPlan.day")}</label>
+            <select
+              value={weekPlanDay}
+              onChange={(e) => setWeekPlanDay(Number(e.target.value))}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+                <option key={d} value={d}>
+                  {t(`weekPlan.days.${d}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">{t("weekPlan.sendTime")}</label>
+            <input
+              type="time"
+              value={weekPlanSendTime}
+              onChange={(e) => setWeekPlanSendTime(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={isSavingWeekPlan}
+          onClick={async () => {
+            setIsSavingWeekPlan(true);
+            try {
+              const updated = await updateWeekPlanSettings({
+                enabled: weekPlanEnabled,
+                day: weekPlanDay,
+                sendTime: weekPlanSendTime,
+              });
+              setProfile(updated);
+              showSuccess(t("common.save"));
+            } catch (e) {
+              showError(e instanceof Error ? e.message : t("common.error"));
+            } finally {
+              setIsSavingWeekPlan(false);
+            }
+          }}
+          className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+        >
+          {isSavingWeekPlan ? <Spinner size={16} /> : null}
+          {t("common.save")}
+        </button>
+      </section>
+
+{/* Apparence */}
       <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="mb-5 flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-950 dark:text-violet-400">
             {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
           </span>
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Apparence</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Thème clair ou sombre</p>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">{t("settings.appearance")}</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t("settings.appearanceHint")}</p>
           </div>
         </div>
 
@@ -474,6 +594,61 @@ function SettingsContent() {
           </div>
         </form>
       </section>
+    
+      {/* À propos */}
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-5">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            {t("about.title")}
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t("about.subtitle")}
+          </p>
+        </div>
+
+        <div className="space-y-5 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900 dark:text-white">{t("about.whatTitle")}</h3>
+            <p>{t("about.whatBody")}</p>
+          </div>
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900 dark:text-white">{t("about.remindersTitle")}</h3>
+            <p>{t("about.remindersBody")}</p>
+          </div>
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900 dark:text-white">{t("about.groupsTitle")}</h3>
+            <p>{t("about.groupsBody")}</p>
+          </div>
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900 dark:text-white">{t("about.moneyTitle")}</h3>
+            <p>{t("about.moneyBody")}</p>
+          </div>
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900 dark:text-white">{t("about.noMoneyTitle")}</h3>
+            <p>{t("about.noMoneyBody")}</p>
+          </div>
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900 dark:text-white">{t("about.weekTitle")}</h3>
+            <p>{t("about.weekBody")}</p>
+          </div>
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900 dark:text-white">{t("about.langTitle")}</h3>
+            <p>{t("about.langBody")}</p>
+          </div>
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900 dark:text-white">{t("about.tipsTitle")}</h3>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>{t("about.tip1")}</li>
+              <li>{t("about.tip2")}</li>
+              <li>{t("about.tip3")}</li>
+            </ul>
+          </div>
+          <p className="border-t border-slate-100 pt-4 text-xs text-slate-400 dark:border-slate-800">
+            {t("about.version")}
+          </p>
+        </div>
+      </section>
+
     </main>
   );
 }

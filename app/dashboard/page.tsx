@@ -130,14 +130,20 @@ function DashboardContent() {
 
       {/* Résumé */}
       <div className="mb-8 grid grid-cols-3 gap-3">
-        <div className="rounded-2xl bg-teal-600 p-4 text-white shadow-sm dark:bg-teal-700">
+        <Link
+          href="/reminders"
+          className="rounded-2xl bg-teal-600 p-4 text-white shadow-sm transition hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600"
+        >
           <Bell className="mb-2 h-5 w-5 opacity-90" />
           <p className="text-2xl font-bold leading-none">{todayReminders.length}</p>
           <p className="mt-1 text-[11px] font-medium leading-tight opacity-90">
             {t("dashboard.remindersToday")}
           </p>
-        </div>
-        <div className="rounded-2xl bg-red-50 p-4 dark:bg-red-950/40">
+        </Link>
+        <Link
+          href="/payments/history"
+          className="rounded-2xl bg-red-50 p-4 transition hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-950/70"
+        >
           <Clock className="mb-2 h-5 w-5 text-red-600 dark:text-red-400" />
           <p className="text-2xl font-bold leading-none text-red-700 dark:text-red-300">
             {totalOverdue}
@@ -145,8 +151,11 @@ function DashboardContent() {
           <p className="mt-1 text-[11px] font-medium leading-tight text-red-600/80 dark:text-red-400/80">
             {t("dashboard.overdue")}
           </p>
-        </div>
-        <div className="rounded-2xl bg-slate-100 p-4 dark:bg-slate-800">
+        </Link>
+        <Link
+          href="/groups"
+          className="rounded-2xl bg-slate-100 p-4 transition hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
+        >
           <Users className="mb-2 h-5 w-5 text-slate-600 dark:text-slate-300" />
           <p className="text-sm font-bold leading-snug text-slate-800 dark:text-slate-100">
             {nextGroupLabel}
@@ -154,7 +163,7 @@ function DashboardContent() {
           <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
             {t("dashboard.nextGroup")}
           </p>
-        </div>
+        </Link>
       </div>
 
       {/* Urgent */}

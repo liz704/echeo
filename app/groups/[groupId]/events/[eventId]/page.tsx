@@ -19,6 +19,7 @@ import {
   recordPayment,
 } from "@/lib/endpoints";
 import type {
+import { useLocale } from "@/contexts/LocaleContext";
   EventDetailResponse,
   EventMemberDetailItem,
   PaymentStatus,
@@ -113,7 +114,7 @@ function EventDetailContent() {
 
     try {
       await recordPayment(activeMember.eventMemberStatusId, numericAmount, "CASH");
-      showSuccess("Paiement enregistré avec succès.");
+      showSuccess(t("payments.paymentRecorded"));
       setAmount("");
       setActiveMember(null);
       loadDetail();
@@ -127,7 +128,7 @@ function EventDetailContent() {
   }
 
   if (isLoading || !detail) {
-    return <FullPageSpinner label="Chargement de l'événement..." />;
+    return <FullPageSpinner label={t("payments.loadingEvent")} />;
   }
 
   const members = detail.members ?? [];
@@ -313,6 +314,7 @@ function EventDetailContent() {
 }
 
 export default function EventDetailPage() {
+  const { t } = useLocale();
   return (
     <AuthGuard>
       <AppNavbar />

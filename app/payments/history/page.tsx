@@ -57,6 +57,7 @@ function PaymentStatusRow({
   status: EventMemberStatusResult;
   showMember?: boolean;
 }) {
+  const { t } = useLocale();
   const [isExpanded, setIsExpanded] = useState(false);
   const [history, setHistory] = useState<PaymentHistoryEntry[] | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -93,7 +94,7 @@ function PaymentStatusRow({
     try {
       await deletePaymentHistoryEntry(pendingDeleteId);
       setHistory((current) => current?.filter((entry) => entry.id !== pendingDeleteId) ?? null);
-      showSuccess("Entrée supprimée de l'historique.");
+      showSuccess(t("payments.entryDeleted"));
       setPendingDeleteId(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Échec de la suppression.";
@@ -108,7 +109,7 @@ function PaymentStatusRow({
     try {
       await deleteAllPaymentHistoryFor(status.id);
       setHistory([]);
-      showSuccess("Historique des versements vidé.");
+      showSuccess(t("payments.historyCleared"));
       setConfirmClearAll(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Échec de la suppression.";
@@ -137,14 +138,14 @@ function PaymentStatusRow({
                 STATUS_CLASSES[status.status] ?? STATUS_CLASSES.PENDING
               }`}
             >
-              {STATUS_LABELS[status.status] ?? status.status}
+              {t(`status.${status.status}`) ?? status.status}
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
             {showMember && status.groupMember?.contactFullName
               ? `${status.groupMember.contactFullName} · `
               : ""}
-            {status.event?.eventDate ? `Échéance ${status.event.eventDate}` : ""}
+            {status.event?.eventDate ? `{t("payments.dueLabel")} ${status.event.eventDate}` : ""}
             {!hasMoney ? " · Info (sans argent)" : ""}
           </p>
         </div>
@@ -170,7 +171,7 @@ function PaymentStatusRow({
       {isExpanded && hasMoney && (
         <div className="border-t border-slate-100 p-4 dark:border-slate-800">
           {isLoadingHistory ? (
-            <Spinner size={16} label="Chargement des versements..." />
+            <Spinner size={16} label={t("payments.loadingTransfers")} />
           ) : history && history.length > 0 ? (
             <>
             <div className="mb-2 flex justify-end">
@@ -204,7 +205,7 @@ function PaymentStatusRow({
                         e.stopPropagation();
                         setPendingDeleteId(entry.id);
                       }}
-                      aria-label="Supprimer cette entrée"
+                      aria-label={t("payments.deleteEntry")}
                       className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -232,10 +233,10 @@ function PaymentStatusRow({
 
       <ConfirmModal
         isOpen={!!pendingDeleteId}
-        title="Supprimer cette entrée ?"
+        title={t("payments.deleteEntry") + " ?"}
         description="Cette action supprime uniquement la ligne d'historique — elle n'annule pas le paiement ni ne recalcule le montant payé."
-        confirmLabel="Supprimer"
-        cancelLabel="Annuler"
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
         isLoading={isDeleting}
         onConfirm={handleConfirmDelete}
         onCancel={() => setPendingDeleteId(null)}
@@ -245,7 +246,7 @@ function PaymentStatusRow({
         title="Tout supprimer ?"
         description="Tous les versements de cette échéance seront retirés de l'historique. Cela n'annule pas les montants déjà comptabilisés."
         confirmLabel="Tout supprimer"
-        cancelLabel="Annuler"
+        cancelLabel={t("common.cancel")}
         isDangerous
         isLoading={isClearingAll}
         onConfirm={handleClearAll}
@@ -277,7 +278,7 @@ function PaymentHistoryContent() {
   }, [showError]);
 
   if (isLoading) {
-    return <FullPageSpinner label="Chargement des paiements..." />;
+    return <FullPageSpinner label={t("payments.loadingPayments")} />;
   }
 
   // Côté propriétaire : on n'affiche pas en double les échéances où tu es
@@ -301,8 +302,7 @@ function PaymentHistoryContent() {
         </p>
         {myStatuses.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-            Aucune cotisation personnelle. Si tu es plutôt organisateur, regarde la section
-            ci-dessous.
+            {t("payments.emptyMine")}
           </div>
         ) : (
           <ul className="space-y-3">
@@ -322,8 +322,7 @@ function PaymentHistoryContent() {
         </p>
         {managedOnly.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-            Aucune échéance dans tes groupes pour l&apos;instant. Crée un événement avec
-            argent et des membres pour les voir ici.
+            {t("payments.emptyManaged")}
           </div>
         ) : (
           <ul className="space-y-3">

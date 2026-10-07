@@ -8,6 +8,7 @@ import { AppNavbar } from "@/components/AppNavbar";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { ConfirmModal } from "@/components/ui/Modal";
 import { StatusBadge } from "@/components/ui/Badge";
+import { useLocale } from "@/contexts/LocaleContext";
 import { useToast } from "@/contexts/ToastContext";
 import {
   deleteAllReminderHistory,
@@ -17,6 +18,7 @@ import {
 import type { ReminderResponse } from "@/lib/types";
 
 function ReminderHistoryContent() {
+  const { t } = useLocale();
   const { showSuccess, showError } = useToast();
   const [history, setHistory] = useState<ReminderResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,7 +36,7 @@ function ReminderHistoryContent() {
       })
       .catch((error: unknown) => {
         const message =
-          error instanceof Error ? error.message : "Impossible de charger l'historique.";
+          error instanceof Error ? error.message : t("common.error");
         showError(message);
       })
       .finally(() => {
@@ -53,10 +55,10 @@ function ReminderHistoryContent() {
     try {
       await deleteReminder(reminderToDelete.id);
       setHistory((current) => current.filter((r) => r.id !== reminderToDelete.id));
-      showSuccess("Rappel supprimé de l'historique.");
+      showSuccess(t("reminders.deletedFromHistory"));
       setReminderToDelete(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la suppression.";
+      const message = error instanceof Error ? error.message : t("common.error");
       showError(message);
     } finally {
       setIsDeleting(false);
@@ -68,10 +70,10 @@ function ReminderHistoryContent() {
     try {
       await deleteAllReminderHistory();
       setHistory([]);
-      showSuccess("Historique des rappels vidé.");
+      showSuccess(t("reminders.historyCleared"));
       setConfirmDeleteAll(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la suppression.";
+      const message = error instanceof Error ? error.message : t("common.error");
       showError(message);
     } finally {
       setIsDeletingAll(false);
@@ -79,7 +81,7 @@ function ReminderHistoryContent() {
   }
 
   if (isLoading) {
-    return <FullPageSpinner label="Chargement de l'historique..." />;
+    return <FullPageSpinner label={t("reminders.historyLoading")} />;
   }
 
   return (
@@ -89,14 +91,14 @@ function ReminderHistoryContent() {
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
       >
         <ArrowLeft className="h-4 w-4" />
-        Retour aux rappels
+        {t("reminders.backToReminders")}
       </Link>
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <History className="h-5 w-5 text-slate-500 dark:text-slate-400" />
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Historique des rappels terminés
+            {t("reminders.historyTitle")}
           </h1>
         </div>
         {history.length > 0 && (
@@ -113,7 +115,7 @@ function ReminderHistoryContent() {
 
       {history.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-          Aucun rappel terminé pour l&apos;instant.
+          {t("reminders.historyEmpty")}
         </div>
       ) : (
         <ul className="space-y-3">
@@ -133,17 +135,17 @@ function ReminderHistoryContent() {
                   </p>
                 )}
                 <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                  Échéance initiale : {reminder.dueDate}
+                  {t("reminders.initialDue")} : {reminder.dueDate}
                   {reminder.nextOccurrence
-                    ? ` — Prochaine occurrence générée : ${reminder.nextOccurrence}`
+                    ? ` — ${t("reminders.nextOccurrence")} : ${reminder.nextOccurrence}`
                     : ""}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setReminderToDelete(reminder)}
-                aria-label="Supprimer ce rappel de l'historique"
-                title="Supprimer"
+                aria-label={t("reminders.deleteFromHistory")}
+                title={t("common.delete")}
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-red-100 text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
               >
                 <Trash2 className="h-4 w-4" />
@@ -155,10 +157,10 @@ function ReminderHistoryContent() {
 
       <ConfirmModal
         isOpen={!!reminderToDelete}
-        title="Supprimer ce rappel ?"
-        description={`"${reminderToDelete?.title ?? ""}" sera retiré définitivement de l'historique.`}
-        confirmLabel="Supprimer"
-        cancelLabel="Annuler"
+        title={t("reminders.deleteFromHistoryTitle")}
+        description={`"${reminderToDelete?.title ?? ""}" ${t("reminders.deleteFromHistoryDesc")}`}
+        confirmLabel={t("common.delete")}
+        cancelLabel={t("common.cancel")}
         isDangerous
         isLoading={isDeleting}
         onConfirm={handleConfirmDelete}
@@ -167,10 +169,10 @@ function ReminderHistoryContent() {
 
       <ConfirmModal
         isOpen={confirmDeleteAll}
-        title="Tout supprimer ?"
-        description="Tous les rappels terminés seront définitivement retirés de ton historique. Les rappels actifs ne sont pas concernés."
-        confirmLabel="Tout supprimer"
-        cancelLabel="Annuler"
+        title={t("reminders.deleteAllTitle")}
+        description={t("reminders.deleteAllDesc")}
+        confirmLabel={t("reminders.deleteAllCta")}
+        cancelLabel={t("common.cancel")}
         isDangerous
         isLoading={isDeletingAll}
         onConfirm={handleDeleteAll}
@@ -181,6 +183,7 @@ function ReminderHistoryContent() {
 }
 
 export default function ReminderHistoryPage() {
+  const { t } = useLocale();
   return (
     <AuthGuard>
       <AppNavbar />

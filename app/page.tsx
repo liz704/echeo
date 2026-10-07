@@ -4,9 +4,11 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { FullPageSpinner } from "@/components/ui/Spinner";
+import { useLocale } from "@/contexts/LocaleContext";
 
 export default function RootPage() {
   const { isAuthenticated, isInitializing } = useAuth();
+  const { t } = useLocale();
   const router = useRouter();
 
   useEffect(() => {
@@ -15,5 +17,5 @@ export default function RootPage() {
     }
   }, [isInitializing, isAuthenticated, router]);
 
-  return <FullPageSpinner label="Chargement d'ÉCHÉO..." />;
+  return <FullPageSpinner label={t("common.loadingApp")} />;
 }

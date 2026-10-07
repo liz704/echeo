@@ -35,42 +35,68 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [formError, setFormError] = useState<string | null>(null);
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+    setErrors((e) => ({ ...e, [key]: undefined }));
+    setFormError(null);
   }
 
-  function validate(): string | null {
-    if (!form.fullName.trim()) return t("auth.fullNameRequired");
-    if (!form.email.trim()) return t("auth.emailRequired");
-    if (form.password.length < 8) return t("auth.passwordMin");
-    if (form.password !== form.confirmPassword) return t("auth.passwordMismatch");
-    return null;
+  function validate(): Partial<Record<keyof FormState, string>> {
+    const next: Partial<Record<keyof FormState, string>> = {};
+    if (!form.fullName.trim()) next.fullName = t("auth.fullNameRequired");
+
+    const email = form.email.trim();
+    if (!email) next.email = t("auth.emailRequired");
+    else if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
+      next.email = t("auth.emailInvalid");
+    }
+
+    if (form.phone.trim()) {
+      const cleaned = form.phone.trim().replace(/[\s().-]/g, "").replace(/^00/, "+");
+      if (!/^\+[1-9]\d{7,14}$/.test(cleaned)) {
+        next.phone = t("auth.phoneInvalid");
+      }
+    }
+
+    if (form.password.length < 8) next.password = t("auth.passwordMin");
+    if (form.password !== form.confirmPassword) next.confirmPassword = t("auth.passwordMismatch");
+    return next;
+  }
+
+  function inputClass(field: keyof FormState, withRightPad = false) {
+    const pad = withRightPad ? "pr-10" : "pr-3";
+    const base = `w-full rounded-lg py-2.5 pl-10 ${pad} text-slate-900 outline-none transition dark:bg-slate-800 dark:text-white`;
+    return errors[field]
+      ? `${base} border-2 border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/30`
+      : `${base} border border-slate-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700`;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const validationError = validate();
-    if (validationError) {
-      setFieldError(validationError);
-      return;
-    }
-    setFieldError(null);
-    setIsSubmitting(true);
+    const next = validate();
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
 
+    setFormError(null);
+    setIsSubmitting(true);
     try {
+      const phone = form.phone.trim()
+        ? form.phone.trim().replace(/[\s().-]/g, "").replace(/^00/, "+")
+        : undefined;
       await register({
         fullName: form.fullName.trim(),
-        email: form.email.trim(),
-        phone: form.phone.trim() || undefined,
+        email: form.email.trim().toLowerCase(),
+        phone,
         password: form.password,
       });
       showSuccess(t("auth.registerSuccess"));
       router.push("/dashboard");
     } catch (error) {
       const message = error instanceof Error ? error.message : t("auth.registerFailed");
-      setFieldError(message);
+      setFormError(message);
       showError(message);
     } finally {
       setIsSubmitting(false);
@@ -115,9 +141,12 @@ export default function RegisterPage() {
                 autoComplete="name"
                 value={form.fullName}
                 onChange={(e) => updateField("fullName", e.target.value)}
-                className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={inputClass("fullName")}
               />
             </div>
+            {errors.fullName && (
+              <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{errors.fullName}</p>
+            )}
           </div>
 
           <div>
@@ -130,11 +159,15 @@ export default function RegisterPage() {
                 id="email"
                 type="email"
                 autoComplete="email"
+                placeholder="ex@domaine.com"
                 value={form.email}
                 onChange={(e) => updateField("email", e.target.value)}
-                className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={inputClass("email")}
               />
             </div>
+            {errors.email && (
+              <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{errors.email}</p>
+            )}
           </div>
 
           <div>
@@ -147,11 +180,16 @@ export default function RegisterPage() {
                 id="phone"
                 type="tel"
                 autoComplete="tel"
+                placeholder="+2376XXXXXXXX"
                 value={form.phone}
                 onChange={(e) => updateField("phone", e.target.value)}
-                className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={inputClass("phone")}
               />
             </div>
+            {errors.phone && (
+              <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{errors.phone}</p>
+            )}
+            <p className="mt-1 text-xs text-slate-400">{t("auth.phoneHint")}</p>
           </div>
 
           <div>
@@ -167,7 +205,7 @@ export default function RegisterPage() {
                 placeholder={t("auth.passwordPlaceholder")}
                 value={form.password}
                 onChange={(e) => updateField("password", e.target.value)}
-                className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-10 text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={inputClass("password", true)}
               />
               <button
                 type="button"
@@ -178,6 +216,9 @@ export default function RegisterPage() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            {errors.password && (
+              <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{errors.password}</p>
+            )}
           </div>
 
           <div>
@@ -193,7 +234,7 @@ export default function RegisterPage() {
                 placeholder={t("auth.confirmPasswordPlaceholder")}
                 value={form.confirmPassword}
                 onChange={(e) => updateField("confirmPassword", e.target.value)}
-                className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-10 text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={inputClass("confirmPassword", true)}
               />
               <button
                 type="button"
@@ -204,11 +245,14 @@ export default function RegisterPage() {
                 {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            {errors.confirmPassword && (
+              <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">{errors.confirmPassword}</p>
+            )}
           </div>
 
-          {fieldError && (
+          {formError && (
             <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-              {fieldError}
+              {formError}
             </p>
           )}
 
