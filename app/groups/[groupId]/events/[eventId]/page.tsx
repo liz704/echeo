@@ -18,8 +18,8 @@ import {
   fetchEventDetail,
   recordPayment,
 } from "@/lib/endpoints";
-import type {
 import { useLocale } from "@/contexts/LocaleContext";
+import type {
   EventDetailResponse,
   EventMemberDetailItem,
   PaymentStatus,
@@ -61,6 +61,7 @@ function formatAmount(value: number) {
 }
 
 function EventDetailContent() {
+  const { t } = useLocale();
   const params = useParams<{ groupId: string; eventId: string }>();
   const eventId = Number(params.eventId);
   const groupId = Number(params.groupId);
@@ -314,7 +315,6 @@ function EventDetailContent() {
 }
 
 export default function EventDetailPage() {
-  const { t } = useLocale();
   return (
     <AuthGuard>
       <AppNavbar />
