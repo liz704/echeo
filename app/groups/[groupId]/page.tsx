@@ -21,12 +21,14 @@ import {
   fetchGroupMembers,
   pauseGroupEvent,
   removeGroupMember,
+  updateMemberLocale,
   resumeGroupEvent,
   updateGroup,
   updateGroupEvent,
 } from "@/lib/endpoints";
 import type { GroupEvent, GroupMember, GroupPaymentHistoryItem, GroupSummary, RepetitionType } from "@/lib/types";
 import { Trash2 } from "lucide-react";
+import { ReminderDaysPicker } from "@/components/ReminderDaysPicker";
 
 const REPETITION_KEYS = ["NONE", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const;
 function repetitionLabel(t: (k: string) => string, value: string) {
@@ -49,7 +51,7 @@ function GroupDetailContent() {
   const groupId = Number(params.groupId);
   const router = useRouter();
   const { showSuccess, showError } = useToast();
-  const { t } = useLocale();
+  const { t, dateLocale } = useLocale();
 
   const [group, setGroup] = useState<GroupSummary | null>(null);
   const [events, setEvents] = useState<GroupEvent[]>([]);
@@ -63,6 +65,7 @@ function GroupDetailContent() {
   const [memberFullName, setMemberFullName] = useState("");
   const [memberEmail, setMemberEmail] = useState("");
   const [memberPhone, setMemberPhone] = useState("");
+  const [memberLocale, setMemberLocale] = useState("");
   const [isAddingMember, setIsAddingMember] = useState(false);
   const [memberError, setMemberError] = useState<string | null>(null);
 
@@ -78,6 +81,7 @@ function GroupDetailContent() {
   // backend si laissée vide).
   const [eventTime, setEventTime] = useState("");
   const [eventRepetitionType, setEventRepetitionType] = useState<RepetitionType>("NONE");
+  const [eventReminderDays, setEventReminderDays] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([]);
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   const [eventError, setEventError] = useState<string | null>(null);
@@ -90,6 +94,7 @@ function GroupDetailContent() {
   const [editDate, setEditDate] = useState("");
   const [editTime, setEditTime] = useState("");
   const [editRepetitionType, setEditRepetitionType] = useState<RepetitionType>("NONE");
+  const [editReminderDays, setEditReminderDays] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -110,7 +115,7 @@ function GroupDetailContent() {
 
   async function handleSaveGroup() {
     if (!editGroupName.trim()) {
-      setEditGroupError("Le nom du groupe est obligatoire.");
+      setEditGroupError(t("msg.groupNameRequired"));
       return;
     }
     setEditGroupError(null);
@@ -124,7 +129,7 @@ function GroupDetailContent() {
       showSuccess(t("groups.editGroupSuccess"));
       setIsEditGroupModalOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la modification du groupe.";
+      const message = error instanceof Error ? error.message : t("msg.groupEditFailed");
       setEditGroupError(message);
       showError(message);
     } finally {
@@ -139,7 +144,7 @@ function GroupDetailContent() {
       showSuccess(t("groups.deleteGroupSuccess"));
       router.push("/groups");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la suppression du groupe.";
+      const message = error instanceof Error ? error.message : t("msg.groupDeleteFailed");
       showError(message);
     } finally {
       setIsDeletingGroup(false);
@@ -153,10 +158,10 @@ function GroupDetailContent() {
     try {
       await removeGroupMember(groupId, memberToDelete.id);
       setMembers((current) => current.filter((m) => m.id !== memberToDelete.id));
-      showSuccess(`${memberToDelete.contactFullName} retiré du groupe.`);
+      showSuccess(t("msg.memberRemoved", { name: memberToDelete.contactFullName }));
       setMemberToDelete(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec du retrait du membre.";
+      const message = error instanceof Error ? error.message : t("msg.memberRemoveFailed");
       showError(message);
     } finally {
       setIsDeletingMember(false);
@@ -169,10 +174,10 @@ function GroupDetailContent() {
     try {
       await deleteGroupEvent(groupId, eventToDelete.id);
       setEvents((current) => current.filter((e) => e.id !== eventToDelete.id));
-      showSuccess(`"${eventToDelete.title}" supprimé.`);
+      showSuccess(t("msg.eventDeleted", { title: eventToDelete.title }));
       setEventToDelete(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la suppression de l'événement.";
+      const message = error instanceof Error ? error.message : t("msg.eventDeleteFailed");
       showError(message);
     } finally {
       setIsDeletingEvent(false);
@@ -196,7 +201,7 @@ function GroupDetailContent() {
         setHistoryPayments(historyData.payments ?? []);
       })
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Impossible de charger ce groupe.";
+        const message = error instanceof Error ? error.message : t("msg.groupLoadFailed");
         showError(message);
       })
       .finally(() => setIsLoading(false));
@@ -210,7 +215,7 @@ function GroupDetailContent() {
   async function handleAddMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!memberFullName.trim() || !memberEmail.trim()) {
-      setMemberError("Le nom et l'email du membre sont obligatoires.");
+      setMemberError(t("msg.memberRequired"));
       return;
     }
     setMemberError(null);
@@ -221,15 +226,17 @@ function GroupDetailContent() {
         fullName: memberFullName.trim(),
         email: memberEmail.trim(),
         phone: memberPhone.trim() || undefined,
+        preferredLocale: memberLocale || undefined,
       });
       setMembers((current) => [...current, created]);
       showSuccess(t("groups.memberAdded"));
       setMemberFullName("");
       setMemberEmail("");
       setMemberPhone("");
+      setMemberLocale("");
       setIsMemberModalOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de l'ajout du membre.";
+      const message = error instanceof Error ? error.message : t("msg.memberAddFailed");
       setMemberError(message);
       showError(message);
     } finally {
@@ -251,8 +258,8 @@ function GroupDetailContent() {
     if (!eventTitle.trim() || (eventHasMoney && !targetAmount) || !eventDate || selectedMemberIds.length === 0) {
       setEventError(
         eventHasMoney
-          ? "Titre, montant cible, date et au moins un membre sélectionné sont obligatoires."
-          : "Titre, date et au moins un membre sélectionné sont obligatoires."
+          ? t("msg.eventRequiredMoney")
+          : t("msg.eventRequiredNoMoney")
       );
       return;
     }
@@ -269,6 +276,7 @@ function GroupDetailContent() {
         eventTime: eventTime || undefined,
         groupMemberIds: selectedMemberIds,
         repetitionType: eventRepetitionType,
+        reminderDaysBefore: eventReminderDays || undefined,
       });
       setEvents((current) => [...current, created]);
       showSuccess(t("groups.eventCreatedSuccess"));
@@ -280,10 +288,11 @@ function GroupDetailContent() {
       setEventDate("");
       setEventTime("");
       setEventRepetitionType("NONE");
+      setEventReminderDays("");
       setSelectedMemberIds([]);
       setIsEventModalOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la création de l'événement.";
+      const message = error instanceof Error ? error.message : t("msg.eventCreateFailed");
       setEventError(message);
       showError(message);
     } finally {
@@ -303,6 +312,7 @@ function GroupDetailContent() {
     // Le backend renvoie "HH:mm:ss" (LocalTime) ; l'input time attend "HH:mm".
     setEditTime(groupEvent.eventTime ? groupEvent.eventTime.slice(0, 5) : "");
     setEditRepetitionType(groupEvent.repetitionType);
+    setEditReminderDays(groupEvent.reminderDaysBefore ?? "");
     setEditError(null);
   }
 
@@ -314,11 +324,11 @@ function GroupDetailContent() {
     const targetAmount = isWithMoney ? Number(editTargetAmount) : undefined;
 
     if (!editTitle.trim() || !editDate) {
-      setEditError("Titre et date sont obligatoires.");
+      setEditError(t("msg.titleDateRequired"));
       return;
     }
     if (isWithMoney && (!targetAmount || targetAmount < 0 || Number.isNaN(targetAmount))) {
-      setEditError("Le montant cible est obligatoire pour un événement avec argent.");
+      setEditError(t("msg.targetRequired"));
       return;
     }
     setEditError(null);
@@ -332,14 +342,17 @@ function GroupDetailContent() {
         // Envoyer undefined pour un événement sans argent le laisse null côté backend.
         targetAmount: isWithMoney ? targetAmount : undefined,
         eventDate: editDate,
+        // On renvoie les frais existants : sinon la modification les effacerait.
+        withdrawalFeeAmount: isWithMoney ? editingEvent.withdrawalFeeAmount : undefined,
         eventTime: editTime || undefined,
         repetitionType: editRepetitionType,
+        reminderDaysBefore: editReminderDays || undefined,
       });
       setEvents((current) => current.map((e) => (e.id === updated.id ? updated : e)));
       showSuccess(t("groups.eventUpdatedSuccess"));
       setEditingEvent(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la modification.";
+      const message = error instanceof Error ? error.message : t("msg.editFailed");
       setEditError(message);
       showError(message);
     } finally {
@@ -356,7 +369,7 @@ function GroupDetailContent() {
       setEvents((current) => current.map((e) => (e.id === updated.id ? updated : e)));
       showSuccess(updated.paused ? t("groups.recurrencePaused") : t("groups.recurrenceResumed"));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de l'opération.";
+      const message = error instanceof Error ? error.message : t("msg.actionFailed");
       showError(message);
     } finally {
       setPausingEventId(null);
@@ -370,11 +383,10 @@ function GroupDetailContent() {
     .slice()
     .sort((a, b) => (a.eventDate < b.eventDate ? 1 : -1));
 
-  const PAYMENT_METHOD_LABELS: Record<string, string> = {
-    CASH: "Espèces",
-    MOBILE_MONEY: "Mobile Money",
-    ORANGE_MONEY: "Orange Money",
-    CARD: "Carte bancaire",
+  const methodLabel = (m: string) => {
+    const key = `payments.method.${m}`;
+    const label = t(key);
+    return label === key ? m : label;
   };
 
   if (isLoading || !group) {
@@ -470,9 +482,27 @@ function GroupDetailContent() {
                   <p className="text-xs text-slate-400">{member.contactEmail}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <select
+                    value={member.preferredLocale ?? ""}
+                    onChange={async (e) => {
+                      try {
+                        const updated = await updateMemberLocale(groupId, member.id, e.target.value);
+                        setMembers((current) => current.map((m) => (m.id === updated.id ? updated : m)));
+                      } catch (error) {
+                        showError(error instanceof Error ? error.message : t("msg.actionFailed"));
+                      }
+                    }}
+                    aria-label={t("v2.memberLanguage")}
+                    title={t("v2.memberLanguage")}
+                    className="rounded-md border border-slate-200 bg-transparent px-1 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                  >
+                    <option value="">{t("v2.langDefault")}</option>
+                    <option value="fr">FR</option>
+                    <option value="en">EN</option>
+                  </select>
                   {member.registeredUser && (
                     <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 dark:bg-teal-950 dark:text-teal-300">
-                      Inscrit
+                      {t("ui.registered")}
                     </span>
                   )}
                   <button
@@ -526,16 +556,16 @@ function GroupDetailContent() {
                             }`}
                           >
                             {repetitionLabel(t, groupEvent.repetitionType)}
-                            {groupEvent.paused ? " (en pause)" : ""}
+                            {groupEvent.paused ? ` (${t("ui.paused")})` : ""}
                           </span>
                         )}
                       </div>
                       <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                         {t("forms.due")} : {groupEvent.eventDate}
-                        {groupEvent.eventTime ? ` à ${groupEvent.eventTime.slice(0, 5)}` : ""}
+                        {groupEvent.eventTime ? ` ${t("reminders.atTime")} ${groupEvent.eventTime.slice(0, 5)}` : ""}
                         {groupEvent.targetAmount != null
-                          ? ` — {t("forms.objective")} : ${formatAmount(groupEvent.targetAmount)}`
-                          : " — Info (sans argent)"}
+                          ? ` — ${t("forms.objective")} : ${formatAmount(groupEvent.targetAmount)}`
+                          : ` — ${t("ui.infoNoMoney")}`}
                       </p>
                     </div>
                     <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
@@ -611,8 +641,8 @@ function GroupDetailContent() {
                     <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                       {t("forms.due")} : {groupEvent.eventDate}
                       {groupEvent.targetAmount != null
-                        ? ` — {t("forms.objective")} : ${formatAmount(groupEvent.targetAmount)}`
-                        : " — Info (sans argent)"}
+                        ? ` — ${t("forms.objective")} : ${formatAmount(groupEvent.targetAmount)}`
+                        : ` — ${t("ui.infoNoMoney")}`}
                     </p>
                   </div>
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
@@ -640,12 +670,12 @@ function GroupDetailContent() {
                       {payment.memberFullName ?? t("groups.memberFallback")} — {formatAmount(payment.amountPaid)}
                     </p>
                     <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                      {payment.eventTitle ?? "Événement"}
+                      {payment.eventTitle ?? t("ui.event")}
                       {" · "}
-                      {PAYMENT_METHOD_LABELS[payment.paymentMethod] ?? payment.paymentMethod}
+                      {methodLabel(payment.paymentMethod)}
                       {" · "}
-                      {new Date(payment.paidAt).toLocaleString("fr-FR")}
-                      {payment.transactionRef ? ` · Réf. ${payment.transactionRef}` : ""}
+                      {new Date(payment.paidAt).toLocaleString(dateLocale)}
+                      {payment.transactionRef ? ` · ${t("ui.ref")} ${payment.transactionRef}` : ""}
                     </p>
                   </div>
                   {payment.eventId != null && (
@@ -653,7 +683,7 @@ function GroupDetailContent() {
                       href={`/groups/${groupId}/events/${payment.eventId}`}
                       className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
                     >
-                      Voir l&apos;événement
+                      {t("groups.seeEvent")}
                     </Link>
                   )}
                 </div>
@@ -668,7 +698,7 @@ function GroupDetailContent() {
         <form onSubmit={handleAddMember} className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Nom complet
+              {t("auth.fullName")}
             </label>
             <input
               type="text"
@@ -680,7 +710,7 @@ function GroupDetailContent() {
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Email
+              {t("forms.email")}
             </label>
             <div className="relative">
               <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -705,8 +735,23 @@ function GroupDetailContent() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("v2.memberLanguage")} <span className="font-normal text-slate-400">{t("forms.optional")}</span>
+            </label>
+            <select
+              value={memberLocale}
+              onChange={(e) => setMemberLocale(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              <option value="">{t("v2.langDefault")}</option>
+              <option value="fr">{t("v2.langFr")}</option>
+              <option value="en">{t("v2.langEn")}</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-400">{t("v2.memberLanguageHint")}</p>
+          </div>
           <p className="text-xs text-slate-400">
-            Ce membre n'a pas besoin de compte ÉCHÉO — il recevra ses relances et reçus par email.
+            {t("ui.memberNoAccount")}
           </p>
 
           {memberError && (
@@ -721,7 +766,7 @@ function GroupDetailContent() {
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
           >
             {isAddingMember && <Spinner size={16} />}
-            Ajouter
+            {t("forms.addMember")}
           </button>
         </form>
       </Modal>
@@ -754,7 +799,7 @@ function GroupDetailContent() {
 
           <div>
             <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Type de rappel
+              {t("forms.eventType")}
             </span>
             <div className="flex gap-2">
               <button
@@ -786,27 +831,28 @@ function GroupDetailContent() {
             {eventHasMoney && (
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                  Montant cible (FCFA)
+                  {t("v2.amountPerMember")}
                 </label>
                 <input
                   type="number"
                   min={0}
-                  placeholder="Ex : 50000"
+                  placeholder={t("ui.example", { value: "5000" })}
                   value={eventTargetAmount}
                   onChange={(e) => setEventTargetAmount(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
+                <p className="mt-1 text-xs text-slate-400">{t("v2.amountPerMemberHint")}</p>
               </div>
             )}
             {eventHasMoney && (
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                  Frais de retrait <span className="font-normal text-slate-400">{t("forms.optional")}</span>
+                  {t("forms.withdrawalFee")} <span className="font-normal text-slate-400">{t("forms.optional")}</span>
                 </label>
                 <input
                   type="number"
                   min={0}
-                  placeholder="Ex : 300"
+                  placeholder={t("ui.example", { value: "300" })}
                   value={eventWithdrawalFee}
                   onChange={(e) => setEventWithdrawalFee(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
@@ -814,11 +860,20 @@ function GroupDetailContent() {
                 <p className="mt-1 text-xs text-slate-400">
                   {t("forms.withdrawalFeeHint")}
                 </p>
+                {Number(eventTargetAmount) > 0 && Number(eventWithdrawalFee) > 0 && (
+                  <p className="mt-1 text-xs font-medium text-teal-700 dark:text-teal-300">
+                    {t("v2.feePreview", {
+                      total: Number(eventTargetAmount) + Number(eventWithdrawalFee),
+                      amount: Number(eventTargetAmount),
+                      fee: Number(eventWithdrawalFee),
+                    })}
+                  </p>
+                )}
               </div>
             )}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Date de l'événement
+                {t("forms.eventDate")}
               </label>
               <input
                 type="date"
@@ -829,7 +884,7 @@ function GroupDetailContent() {
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Heure des relances ({t("forms.reminderTimeHint")})
+                {t("forms.reminderTime")} {t("forms.reminderTimeHint")}
               </label>
               <input
                 type="time"
@@ -860,6 +915,8 @@ function GroupDetailContent() {
             </p>
           </div>
 
+          <ReminderDaysPicker value={eventReminderDays} onChange={setEventReminderDays} />
+
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
               {t("forms.membersConcerned")}
@@ -882,7 +939,7 @@ function GroupDetailContent() {
               ))}
             </div>
             <p className="mt-1 text-xs text-slate-400">
-              Le montant cible sera réparti à parts égales entre les membres cochés.
+              {t("ui.targetSplit")}
             </p>
           </div>
 
@@ -907,7 +964,7 @@ function GroupDetailContent() {
       <Modal
         isOpen={!!editingEvent}
         onClose={() => setEditingEvent(null)}
-        title={`Modifier — ${editingEvent?.title ?? ""}`}
+        title={t("ui.editTitleWith", { title: editingEvent?.title ?? "" })}
       >
         <form onSubmit={handleSaveEdit} className="space-y-4">
           <div>
@@ -921,7 +978,7 @@ function GroupDetailContent() {
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Description
+              {t("forms.description")}
             </label>
             <textarea
               value={editDescription}
@@ -934,7 +991,7 @@ function GroupDetailContent() {
             {editingEvent?.targetAmount != null && (
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                  Montant cible (FCFA)
+                  {t("forms.targetAmount")}
                 </label>
                 <input
                   type="number"
@@ -947,7 +1004,7 @@ function GroupDetailContent() {
             )}
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Date
+                {t("forms.date")}
               </label>
               <input
                 type="date"
@@ -958,7 +1015,7 @@ function GroupDetailContent() {
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Heure (optionnel)
+                {t("forms.time")} {t("forms.optional")}
               </label>
               <input
                 type="time"
@@ -984,6 +1041,8 @@ function GroupDetailContent() {
               ))}
             </select>
           </div>
+
+          <ReminderDaysPicker value={editReminderDays} onChange={setEditReminderDays} />
 
           {editError && (
             <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
@@ -1013,7 +1072,7 @@ function GroupDetailContent() {
         <div className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Nom du groupe
+              {t("groups.name")}
             </label>
             <input
               type="text"
@@ -1053,7 +1112,7 @@ function GroupDetailContent() {
       <ConfirmModal
         isOpen={isDeleteGroupModalOpen}
         title={t("groups.deleteTitle")}
-        description={`Cette action est irréversible : "${group?.name ?? ""}" et tous ses membres, événements et paiements associés seront définitivement supprimés.`}
+        description={t("ui.deleteGroupDesc", { name: group?.name ?? "" })}
         confirmLabel={t("common.delete")}
         isDangerous
         isLoading={isDeletingGroup}
@@ -1063,9 +1122,9 @@ function GroupDetailContent() {
 
       <ConfirmModal
         isOpen={!!memberToDelete}
-        title="Retirer ce membre ?"
-        description={`"${memberToDelete?.contactFullName ?? ""}" sera retiré du groupe, avec son historique de paiement pour ce groupe.`}
-        confirmLabel="Retirer"
+        title={t("ui.removeMemberTitle")}
+        description={t("ui.removeMemberDesc", { name: memberToDelete?.contactFullName ?? "" })}
+        confirmLabel={t("ui.removeMemberCta")}
         isDangerous
         isLoading={isDeletingMember}
         onConfirm={handleConfirmDeleteMember}
@@ -1075,7 +1134,7 @@ function GroupDetailContent() {
       <ConfirmModal
         isOpen={!!eventToDelete}
         title={t("groups.deleteEvent") + " ?"}
-        description={`"${eventToDelete?.title ?? ""}" et le suivi de tous les membres pour cet événement seront définitivement supprimés.`}
+        description={t("ui.deleteEventDesc", { title: eventToDelete?.title ?? "" })}
         confirmLabel={t("common.delete")}
         isDangerous
         isLoading={isDeletingEvent}

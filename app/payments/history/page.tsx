@@ -18,16 +18,6 @@ import {
 } from "@/lib/endpoints";
 import type { EventMemberStatusResult, PaymentHistoryEntry, PaymentStatus } from "@/lib/types";
 
-const STATUS_LABELS: Record<PaymentStatus, string> = {
-  PENDING: "En attente",
-  PARTIALLY_PAID: "Partiellement payé",
-  PAID: "Payé",
-  SURPLUS: "Surplus",
-  OVERDUE: "En retard",
-  NOT_SEEN: "Pas encore vu",
-  SEEN: "Vu",
-};
-
 const STATUS_CLASSES: Record<PaymentStatus, string> = {
   PENDING: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
   PARTIALLY_PAID: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
@@ -36,13 +26,6 @@ const STATUS_CLASSES: Record<PaymentStatus, string> = {
   OVERDUE: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   NOT_SEEN: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
   SEEN: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-};
-
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  CASH: "Espèces",
-  MOBILE_MONEY: "Mobile Money",
-  ORANGE_MONEY: "Orange Money",
-  CARD: "Carte bancaire",
 };
 
 function formatAmount(value: number | null | undefined): string {
@@ -57,7 +40,12 @@ function PaymentStatusRow({
   status: EventMemberStatusResult;
   showMember?: boolean;
 }) {
-  const { t } = useLocale();
+  const { t, dateLocale } = useLocale();
+  const methodLabel = (m: string) => {
+    const key = `payments.method.${m}`;
+    const label = t(key);
+    return label === key ? m : label;
+  };
   const [isExpanded, setIsExpanded] = useState(false);
   const [history, setHistory] = useState<PaymentHistoryEntry[] | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -80,7 +68,7 @@ function PaymentStatusRow({
         const data = await fetchPaymentHistoryFor(status.id);
         setHistory(data);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Impossible de charger le détail.";
+        const message = error instanceof Error ? error.message : t("msg.detailLoadFailed");
         showError(message);
       } finally {
         setIsLoadingHistory(false);
@@ -97,7 +85,7 @@ function PaymentStatusRow({
       showSuccess(t("payments.entryDeleted"));
       setPendingDeleteId(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la suppression.";
+      const message = error instanceof Error ? error.message : t("msg.deleteFailed");
       showError(message);
     } finally {
       setIsDeleting(false);
@@ -112,7 +100,7 @@ function PaymentStatusRow({
       showSuccess(t("payments.historyCleared"));
       setConfirmClearAll(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la suppression.";
+      const message = error instanceof Error ? error.message : t("msg.deleteFailed");
       showError(message);
     } finally {
       setIsClearingAll(false);
@@ -131,7 +119,7 @@ function PaymentStatusRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-medium text-slate-900 dark:text-white">
-              {status.event?.title ?? "Événement"}
+              {status.event?.title ?? t("ui.event")}
             </p>
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -145,8 +133,8 @@ function PaymentStatusRow({
             {showMember && status.groupMember?.contactFullName
               ? `${status.groupMember.contactFullName} · `
               : ""}
-            {status.event?.eventDate ? `{t("payments.dueLabel")} ${status.event.eventDate}` : ""}
-            {!hasMoney ? " · Info (sans argent)" : ""}
+            {status.event?.eventDate ? `${t("payments.dueLabel")} ${status.event.eventDate}` : ""}
+            {!hasMoney ? ` · ${t("ui.infoNoMoney")}` : ""}
           </p>
         </div>
 
@@ -180,7 +168,7 @@ function PaymentStatusRow({
                 onClick={() => setConfirmClearAll(true)}
                 className="text-xs font-medium text-red-600 hover:underline dark:text-red-400"
               >
-                Tout supprimer
+                {t("ui.deleteAll")}
               </button>
             </div>
             <ul className="space-y-2">
@@ -190,10 +178,10 @@ function PaymentStatusRow({
                   className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800"
                 >
                   <span className="text-slate-600 dark:text-slate-300">
-                    {PAYMENT_METHOD_LABELS[entry.paymentMethod] ?? entry.paymentMethod}
-                    {entry.transactionRef ? ` — Réf. ${entry.transactionRef}` : ""}
+                    {methodLabel(entry.paymentMethod)}
+                    {entry.transactionRef ? ` — ${t("ui.ref")} ${entry.transactionRef}` : ""}
                     {" · "}
-                    {new Date(entry.paidAt).toLocaleString("fr-FR")}
+                    {new Date(entry.paidAt).toLocaleString(dateLocale)}
                   </span>
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-slate-900 dark:text-white">
@@ -216,7 +204,7 @@ function PaymentStatusRow({
             </ul>
             </>
           ) : (
-            <p className="text-sm text-slate-400">Aucun versement enregistré pour cette échéance.</p>
+            <p className="text-sm text-slate-400">{t("ui.noPaymentForDue")}</p>
           )}
           {status.event?.id != null && (
             <div className="mt-3">
@@ -224,7 +212,7 @@ function PaymentStatusRow({
                 href={`/groups`}
                 className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
               >
-                Gérer dans les groupes
+                {t("ui.manageInGroups")}
               </Link>
             </div>
           )}
@@ -234,7 +222,7 @@ function PaymentStatusRow({
       <ConfirmModal
         isOpen={!!pendingDeleteId}
         title={t("payments.deleteEntry") + " ?"}
-        description="Cette action supprime uniquement la ligne d'historique — elle n'annule pas le paiement ni ne recalcule le montant payé."
+        description={t("ui.deleteEntryDesc")}
         confirmLabel={t("common.delete")}
         cancelLabel={t("common.cancel")}
         isLoading={isDeleting}
@@ -243,9 +231,9 @@ function PaymentStatusRow({
       />
       <ConfirmModal
         isOpen={confirmClearAll}
-        title="Tout supprimer ?"
-        description="Tous les versements de cette échéance seront retirés de l'historique. Cela n'annule pas les montants déjà comptabilisés."
-        confirmLabel="Tout supprimer"
+        title={t("ui.deleteAllTitle")}
+        description={t("ui.deleteAllPaymentsDesc")}
+        confirmLabel={t("ui.deleteAll")}
         cancelLabel={t("common.cancel")}
         isDangerous
         isLoading={isClearingAll}
@@ -271,10 +259,11 @@ function PaymentHistoryContent() {
         setManagedStatuses(managed ?? []);
       })
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Impossible de charger les paiements.";
+        const message = error instanceof Error ? error.message : t("msg.paymentsLoadFailed");
         showError(message);
       })
       .finally(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showError]);
 
   if (isLoading) {

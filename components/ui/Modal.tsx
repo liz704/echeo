@@ -3,6 +3,7 @@
 import { ReactNode, useEffect } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
+import { useLocale } from "@/contexts/LocaleContext";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -20,13 +21,14 @@ export function ConfirmModal({
   isOpen,
   title,
   description,
-  confirmLabel = "Confirmer",
-  cancelLabel = "Annuler",
+  confirmLabel,
+  cancelLabel,
   isDangerous = false,
   isLoading = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const { t } = useLocale();
   useEffect(() => {
     if (!isOpen) return;
     const prev = document.body.style.overflow;
@@ -67,7 +69,7 @@ export function ConfirmModal({
             <button
               type="button"
               onClick={onCancel}
-              aria-label="Fermer"
+              aria-label={t("ui.close")}
               className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
             >
               <X className="h-5 w-5" />
@@ -85,7 +87,7 @@ export function ConfirmModal({
               disabled={isLoading}
               className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
             >
-              {cancelLabel}
+              {cancelLabel ?? t("common.cancel")}
             </button>
             <button
               type="button"
@@ -98,7 +100,7 @@ export function ConfirmModal({
               }`}
             >
               {isLoading && <Spinner size={16} />}
-              {confirmLabel}
+              {confirmLabel ?? t("ui.confirm")}
             </button>
           </div>
         </div>
@@ -118,6 +120,7 @@ export function Modal({
   title: string;
   children: ReactNode;
 }) {
+  const { t } = useLocale();
   useEffect(() => {
     if (!isOpen) return;
     const prev = document.body.style.overflow;
@@ -149,7 +152,7 @@ export function Modal({
             <button
               type="button"
               onClick={onClose}
-              aria-label="Fermer"
+              aria-label={t("ui.close")}
               className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
             >
               <X className="h-5 w-5" />

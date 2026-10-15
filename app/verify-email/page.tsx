@@ -6,8 +6,10 @@ import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { apiClient } from "@/lib/api";
+import { useLocale } from "@/contexts/LocaleContext";
 
 function VerifyContent() {
+  const { t } = useLocale();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
@@ -16,22 +18,23 @@ function VerifyContent() {
   useEffect(() => {
     if (!token) {
       setStatus("error");
-      setMessage("Lien invalide : token manquant.");
+      setMessage(t("msg.verifyMissingToken"));
       return;
     }
     apiClient
       .get(`/auth/verify-email`, { params: { token } })
       .then(() => {
         setStatus("ok");
-        setMessage("Ton email est confirmé. Tu peux te connecter.");
+        setMessage(t("msg.verifyOk"));
       })
       .catch((err) => {
         setStatus("error");
-        setMessage(err instanceof Error ? err.message : "Confirmation impossible.");
+        setMessage(err instanceof Error ? err.message : t("msg.verifyFailed"));
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  if (status === "loading") return <FullPageSpinner label="Confirmation..." />;
+  if (status === "loading") return <FullPageSpinner label={t("ui.confirming")} />;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
@@ -42,14 +45,14 @@ function VerifyContent() {
           <XCircle className="mx-auto mb-3 h-12 w-12 text-red-500" />
         )}
         <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
-          {status === "ok" ? "Email confirmé" : "Échec"}
+          {status === "ok" ? t("ui.emailConfirmedTitle") : t("ui.failedTitle")}
         </h1>
         <p className="mt-2 text-sm text-slate-500">{message}</p>
         <Link
           href="/login"
           className="mt-6 inline-block rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-700"
         >
-          Connexion
+          {t("auth.login")}
         </Link>
       </div>
     </main>

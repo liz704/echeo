@@ -1,11 +1,12 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 import type { ApiErrorBody } from "./types";
+import { translateApiMessage, currentLocale } from "./i18n/apiMessages";
 
 // URL de base de l'API Spring Boot. Configurable via la variable d'environnement
 // NEXT_PUBLIC_API_BASE_URL (injectée au build Docker — voir Dockerfile de l'Étape 5) ;
 // retombe sur localhost:8080 pour le développement local sans Docker.
- //export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://echeo-backend.onrender.com/api/v1";
+ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
+//export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://echeo-backend.onrender.com/api/v1";
 
 const TOKEN_STORAGE_KEY = "echeo_jwt_token";
 
@@ -54,11 +55,14 @@ apiClient.interceptors.response.use(
       }
     }
 
+    const locale = currentLocale();
     const backendMessage = error.response?.data?.message;
-    const normalizedMessage =
+    const normalizedMessage = translateApiMessage(
       backendMessage ??
-      error.message ??
-      "Une erreur inattendue est survenue. Veuillez réessayer.";
+        error.message ??
+        "Une erreur inattendue est survenue. Veuillez réessayer.",
+      locale
+    );
 
     return Promise.reject(new Error(normalizedMessage));
   }

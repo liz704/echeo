@@ -1,25 +1,28 @@
+"use client";
+
 import { CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { useLocale } from "@/contexts/LocaleContext";
 
 export type ReminderBadgeStatus = "UPCOMING" | "OVERDUE" | "COMPLETED";
 
 const BADGE_CONFIG: Record<
   ReminderBadgeStatus,
-  { label: string; classes: string; Icon: typeof Clock }
+  { labelKey: string; classes: string; Icon: typeof Clock }
 > = {
   UPCOMING: {
-    label: "À venir",
+    labelKey: "common.upcoming",
     classes:
       "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800",
     Icon: Clock,
   },
   OVERDUE: {
-    label: "En retard",
+    labelKey: "common.overdue",
     classes:
       "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800",
     Icon: AlertCircle,
   },
   COMPLETED: {
-    label: "Terminé",
+    labelKey: "ui.done",
     classes:
       "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800",
     Icon: CheckCircle2,
@@ -27,6 +30,7 @@ const BADGE_CONFIG: Record<
 };
 
 export function StatusBadge({ status }: { status: ReminderBadgeStatus }) {
+  const { t } = useLocale();
   const config = BADGE_CONFIG[status];
   const Icon = config.Icon;
 
@@ -35,7 +39,7 @@ export function StatusBadge({ status }: { status: ReminderBadgeStatus }) {
       className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${config.classes}`}
     >
       <Icon className="h-3.5 w-3.5" />
-      {config.label}
+      {t(config.labelKey)}
     </span>
   );
 }

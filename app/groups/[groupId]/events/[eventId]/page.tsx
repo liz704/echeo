@@ -25,16 +25,6 @@ import type {
   PaymentStatus,
 } from "@/lib/types";
 
-const STATUS_LABELS: Record<PaymentStatus, string> = {
-  PENDING: "En attente",
-  PARTIALLY_PAID: "Partiel",
-  PAID: "Payé",
-  SURPLUS: "Surplus",
-  OVERDUE: "En retard",
-  NOT_SEEN: "Pas encore vu",
-  SEEN: "Vu",
-};
-
 const STATUS_CLASSES: Record<PaymentStatus, string> = {
   PENDING: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
   PARTIALLY_PAID: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
@@ -43,13 +33,6 @@ const STATUS_CLASSES: Record<PaymentStatus, string> = {
   OVERDUE: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   NOT_SEEN: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
   SEEN: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-};
-
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  CASH: "Paiement physique",
-  MOBILE_MONEY: "Mobile Money",
-  ORANGE_MONEY: "Orange Money",
-  CARD: "Carte bancaire",
 };
 
 function formatAmount(value: number) {
@@ -61,7 +44,13 @@ function formatAmount(value: number) {
 }
 
 function EventDetailContent() {
-  const { t } = useLocale();
+  const { t, dateLocale } = useLocale();
+  const methodLabel = (m: string) => {
+    if (m === "CASH") return t("ui.physicalPayment");
+    const key = `payments.method.${m}`;
+    const label = t(key);
+    return label === key ? m : label;
+  };
   const params = useParams<{ groupId: string; eventId: string }>();
   const eventId = Number(params.eventId);
   const groupId = Number(params.groupId);
@@ -81,7 +70,7 @@ function EventDetailContent() {
     fetchEventDetail(groupId, eventId)
       .then(setDetail)
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "Impossible de charger l'événement.";
+        const message = error instanceof Error ? error.message : t("msg.eventLoadFailed");
         showError(message);
       })
       .finally(() => setIsLoading(false));
@@ -107,7 +96,7 @@ function EventDetailContent() {
 
     const numericAmount = Number(amount);
     if (!numericAmount || numericAmount <= 0) {
-      setRecordError("Merci de saisir un montant valide.");
+      setRecordError(t("msg.enterValidAmount"));
       return;
     }
     setRecordError(null);
@@ -120,7 +109,7 @@ function EventDetailContent() {
       setActiveMember(null);
       loadDetail();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de l'enregistrement du paiement.";
+      const message = error instanceof Error ? error.message : t("msg.recordPaymentFailed");
       setRecordError(message);
       showError(message);
     } finally {
@@ -141,7 +130,7 @@ function EventDetailContent() {
         className="mb-6 inline-flex items-center gap-1.5 text-sm text-slate-500 transition hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
       >
         <ArrowLeft className="h-4 w-4" />
-        Retour au groupe
+        {t("ui.backToGroup")}
       </Link>
 
       <header className="mb-6">
@@ -150,24 +139,24 @@ function EventDetailContent() {
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{detail.description}</p>
         )}
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Échéance : {detail.eventDate}
-          {detail.eventTime ? ` à ${detail.eventTime.slice(0, 5)}` : ""}
+          {t("forms.due")} : {detail.eventDate}
+          {detail.eventTime ? ` ${t("reminders.atTime")} ${detail.eventTime.slice(0, 5)}` : ""}
           {detail.hasMoney
-            ? ` — Objectif : ${formatAmount(detail.targetAmount ?? 0)}`
-            : " — Info (sans argent)"}
+            ? ` — ${t("forms.objective")} : ${formatAmount(detail.targetAmount ?? 0)}`
+            : ` — ${t("ui.infoNoMoney")}`}
           {detail.withdrawalFeeAmount != null && detail.withdrawalFeeAmount > 0
-            ? ` — Frais de retrait : ${formatAmount(detail.withdrawalFeeAmount)}`
+            ? ` — ${t("forms.withdrawalFee")} : ${formatAmount(detail.withdrawalFeeAmount)}`
             : ""}
         </p>
       </header>
 
       <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
-        Suivi par membre
+        {t("ui.memberTracking")}
       </h2>
 
       {members.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-          Aucun membre associé à cet événement.
+          {t("ui.noMemberLinked")}
         </div>
       ) : (
         <ul className="space-y-3">
@@ -185,20 +174,20 @@ function EventDetailContent() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium text-slate-900 dark:text-white">
-                        {member.memberFullName ?? "Membre"}
+                        {member.memberFullName ?? t("groups.memberFallback")}
                       </p>
                       <span
                         className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[member.status]}`}
                       >
-                        {STATUS_LABELS[member.status]}
+                        {t(`status.${member.status}`)}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                       {detail.hasMoney
                         ? `${formatAmount(member.paidAmount ?? 0)} / ${formatAmount(member.requiredAmount ?? 0)}`
                         : member.status === "SEEN" && member.seenAt
-                          ? `Vu le ${new Date(member.seenAt).toLocaleString("fr-FR")}`
-                          : "Pas encore consulté"}
+                          ? t("ui.seenOn", { date: new Date(member.seenAt).toLocaleString(dateLocale) })
+                          : t("ui.notViewedYet")}
                       {member.memberEmail ? ` · ${member.memberEmail}` : ""}
                     </p>
                   </div>
@@ -211,11 +200,12 @@ function EventDetailContent() {
                         className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                       >
                         {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                        Historique
+                        {t("ui.history")}
                         {detail.hasMoney && hasPayments ? ` (${member.payments.length})` : ""}
                       </button>
                     )}
-                    {detail.hasMoney && (
+                    {/* Plus de bouton une fois la part du membre entièrement réglée. */}
+                    {detail.hasMoney && member.status !== "PAID" && member.status !== "SURPLUS" && (
                       <button
                         type="button"
                         onClick={() => {
@@ -225,7 +215,7 @@ function EventDetailContent() {
                         }}
                         className="rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-teal-700"
                       >
-                        Paiement physique
+                        {t("ui.physicalPayment")}
                       </button>
                     )}
                   </div>
@@ -245,23 +235,23 @@ function EventDetailContent() {
                                 {formatAmount(p.amountPaid)}
                               </span>
                               <span className="text-xs text-slate-500 dark:text-slate-400">
-                                {PAYMENT_METHOD_LABELS[p.paymentMethod] ?? p.paymentMethod}
+                                {methodLabel(p.paymentMethod)}
                                 {" · "}
-                                {new Date(p.paidAt).toLocaleString("fr-FR")}
-                                {p.transactionRef ? ` · Réf. ${p.transactionRef}` : ""}
+                                {new Date(p.paidAt).toLocaleString(dateLocale)}
+                                {p.transactionRef ? ` · ${t("ui.ref")} ${p.transactionRef}` : ""}
                               </span>
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <p className="text-xs text-slate-400">Aucun versement enregistré.</p>
+                        <p className="text-xs text-slate-400">{t("ui.noPaymentRecorded")}</p>
                       )
                     ) : (
                       <p className="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
                         <Check className="h-4 w-4 text-emerald-600" />
                         {member.seenAt
-                          ? `Consulté le ${new Date(member.seenAt).toLocaleString("fr-FR")}`
-                          : "Pas encore consulté"}
+                          ? t("ui.viewedOn", { date: new Date(member.seenAt).toLocaleString(dateLocale) })
+                          : t("ui.notViewedYet")}
                       </p>
                     )}
                   </div>
@@ -275,17 +265,15 @@ function EventDetailContent() {
       <Modal
         isOpen={!!activeMember}
         onClose={() => setActiveMember(null)}
-        title={`Paiement physique — ${activeMember?.memberFullName ?? ""}`}
+        title={t("ui.physicalPaymentTitle", { name: activeMember?.memberFullName ?? "" })}
       >
         <form onSubmit={handleRecordPayment} className="space-y-4">
           <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-            Enregistrement d&apos;un <strong>paiement physique</strong> reçu en main propre
-            (espèces, etc.). Les paiements Mobile Money / Orange Money / carte se font
-            uniquement via le lien envoyé au membre.
+            {t("ui.physicalInfoA")} <strong>{t("ui.physicalInfoB")}</strong> {t("ui.physicalInfoC")}
           </p>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Montant reçu (FCFA)
+              {t("ui.amountReceived")}
             </label>
             <input
               type="number"
@@ -306,7 +294,7 @@ function EventDetailContent() {
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
           >
             {isRecording && <Spinner size={16} />}
-            Enregistrer le paiement physique
+            {t("ui.recordPhysical")}
           </button>
         </form>
       </Modal>

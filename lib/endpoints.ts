@@ -295,3 +295,28 @@ export async function updateWeekPlanSettings(payload: {
   const response = await apiClient.put<UserProfile>("/users/me/week-plan", payload);
   return response.data;
 }
+
+export async function updateMemberLocale(
+  groupId: number,
+  memberId: number,
+  preferredLocale: string
+): Promise<GroupMember> {
+  const response = await apiClient.patch<GroupMember>(`/groups/${groupId}/members/${memberId}/locale`, {
+    preferredLocale,
+  });
+  return response.data;
+}
+
+export async function fetchOnlinePaymentAvailable(): Promise<boolean> {
+  const response = await apiClient.get<{ available: boolean }>("/public/pay/online-available");
+  return response.data.available;
+}
+
+export async function startOnlinePayment(token: string): Promise<string> {
+  const response = await apiClient.post<{ sessionUrl: string }>(`/public/pay/${token}/online`);
+  return response.data.sessionUrl;
+}
+
+export async function refreshOnlinePayment(token: string): Promise<void> {
+  await apiClient.post(`/public/pay/${token}/online/refresh`);
+}

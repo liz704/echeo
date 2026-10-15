@@ -17,6 +17,7 @@ export type TranslationKey = string;
 
 interface LocaleContextValue {
   locale: Locale;
+  dateLocale: string;
   setLocale: (locale: Locale) => void;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
 }
@@ -71,7 +72,8 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     [locale]
   );
 
-  const value = useMemo(() => ({ locale, setLocale, t }), [locale, setLocale, t]);
+  const dateLocale = locale === "en" ? "en-US" : "fr-FR";
+  const value = useMemo(() => ({ locale, dateLocale, setLocale, t }), [locale, dateLocale, setLocale, t]);
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }

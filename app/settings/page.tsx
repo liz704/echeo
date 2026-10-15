@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { AppNavbar } from "@/components/AppNavbar";
+import { Collapsible } from "@/components/ui/Collapsible";
+import { AppLockPanel } from "@/components/AppLockPanel";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/contexts/ToastContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -33,7 +35,7 @@ function getInitials(name: string): string {
 function SettingsContent() {
   const { showSuccess, showError } = useToast();
   const { theme, toggleTheme } = useTheme();
-  const { t, locale, setLocale } = useLocale();
+  const { t, locale, dateLocale, setLocale } = useLocale();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -72,7 +74,7 @@ function SettingsContent() {
           setPhone(data.phone ?? "");
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Impossible de charger le profil.";
+        const message = error instanceof Error ? error.message : t("msg.loadProfileFailed");
         showError(message);
       } finally {
         if (isMounted) setIsLoading(false);
@@ -104,7 +106,7 @@ function SettingsContent() {
   async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!fullName.trim()) {
-      setProfileError("Le nom complet est obligatoire.");
+      setProfileError(t("auth.fullNameRequired"));
       return;
     }
     setProfileError(null);
@@ -118,7 +120,7 @@ function SettingsContent() {
       setProfile(updated);
       showSuccess(t("settings.profileUpdated"));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la mise à jour du profil.";
+      const message = error instanceof Error ? error.message : t("msg.updateProfileFailed");
       setProfileError(message);
       showError(message);
     } finally {
@@ -129,15 +131,15 @@ function SettingsContent() {
   async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!currentPassword || !newPassword) {
-      setPasswordError("Tous les champs sont obligatoires.");
+      setPasswordError(t("msg.allFieldsRequired"));
       return;
     }
     if (newPassword.length < 8) {
-      setPasswordError("Le nouveau mot de passe doit contenir au moins 8 caractères.");
+      setPasswordError(t("auth.passwordMin"));
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setPasswordError("La confirmation ne correspond pas au nouveau mot de passe.");
+      setPasswordError(t("msg.confirmationMismatch"));
       return;
     }
     setPasswordError(null);
@@ -150,7 +152,7 @@ function SettingsContent() {
       setConfirmNewPassword("");
       showSuccess(t("settings.passwordChanged"));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec du changement de mot de passe.";
+      const message = error instanceof Error ? error.message : t("msg.changePasswordFailed");
       setPasswordError(message);
       showError(message);
     } finally {
@@ -163,14 +165,14 @@ function SettingsContent() {
   }
 
   const memberSince = profile.createdAt
-    ? new Date(profile.createdAt).toLocaleDateString("fr-FR", {
+    ? new Date(profile.createdAt).toLocaleDateString(dateLocale, {
         day: "numeric",
         month: "long",
         year: "numeric",
       })
     : null;
 
-  const strengthLabel = ["", "Faible", "Moyen", "Bon", "Fort"][passwordStrength] ?? "";
+  const strengthLabel = ["", t("settings.weak"), t("settings.medium"), t("settings.good"), t("settings.strong")][passwordStrength] ?? "";
   const strengthColor =
     passwordStrength <= 1
       ? "bg-red-500"
@@ -205,7 +207,7 @@ function SettingsContent() {
                 {profile.email}
               </p>
               {memberSince && (
-                <p className="mt-1 text-xs text-teal-200/80">Membre depuis {memberSince}</p>
+                <p className="mt-1 text-xs text-teal-200/80">{t("settings.memberSince", { date: memberSince })}</p>
               )}
             </div>
           </div>
@@ -213,23 +215,24 @@ function SettingsContent() {
       </section>
 
       {/* Profil */}
-      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-5 flex items-center gap-3">
+      <Collapsible className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 mb-6" header={<>
+        <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400">
             <User className="h-4.5 w-4.5" />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Profil</h2>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">{t("settings.profile")}</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Informations visibles dans tes groupes et notifications
+              {t("settings.profileHint")}
             </p>
           </div>
         </div>
+      </>}>
 
         <form onSubmit={handleProfileSubmit} className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Adresse email
+              {t("ui.emailAddress")}
             </label>
             <div className="relative">
               <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -240,25 +243,25 @@ function SettingsContent() {
                 className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400"
               />
             </div>
-            <p className="mt-1.5 text-xs text-slate-400">L&apos;email ne peut pas être modifié ici.</p>
+            <p className="mt-1.5 text-xs text-slate-400">{t("settings.emailLocked")}</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Nom complet
+                {t("settings.fullName")}
               </label>
               <input
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Ton nom complet"
+                placeholder={t("ui.fullNamePlaceholder")}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Téléphone
+                {t("settings.phone")}
               </label>
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -293,12 +296,12 @@ function SettingsContent() {
             </button>
           </div>
         </form>
-      </section>
+      </Collapsible>
 
 
       {/* Langue des e-mails */}
-      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-5">
+      <Collapsible className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 mb-6" header={<>
+        <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             {t("settings.emailLanguage")}
           </h2>
@@ -306,6 +309,7 @@ function SettingsContent() {
             {t("settings.emailLanguageHint")}
           </p>
         </div>
+      </>}>
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
@@ -333,12 +337,12 @@ function SettingsContent() {
         <p className="mt-3 text-xs text-slate-400">
           {t("settings.emailLanguageSaveHint")}
         </p>
-      </section>
+      </Collapsible>
 
       
       {/* Planification hebdomadaire */}
-      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-4">
+      <Collapsible className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 mb-6" header={<>
+        <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             {t("weekPlan.settingsTitle")}
           </h2>
@@ -346,6 +350,7 @@ function SettingsContent() {
             {t("weekPlan.settingsHint")}
           </p>
         </div>
+      </>}>
         <label className="mb-4 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
           <input
             type="checkbox"
@@ -404,11 +409,11 @@ function SettingsContent() {
           {isSavingWeekPlan ? <Spinner size={16} /> : null}
           {t("common.save")}
         </button>
-      </section>
+      </Collapsible>
 
 {/* Apparence */}
-      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-5 flex items-center gap-3">
+      <Collapsible className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 mb-6" header={<>
+        <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-950 dark:text-violet-400">
             {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
           </span>
@@ -417,6 +422,7 @@ function SettingsContent() {
             <p className="text-xs text-slate-500 dark:text-slate-400">{t("settings.appearanceHint")}</p>
           </div>
         </div>
+      </>}>
 
         <div className="grid grid-cols-2 gap-3">
           <button
@@ -431,7 +437,7 @@ function SettingsContent() {
             }`}
           >
             <Sun className="h-5 w-5" />
-            Clair
+            {t("settings.themeLight")}
           </button>
           <button
             type="button"
@@ -445,7 +451,7 @@ function SettingsContent() {
             }`}
           >
             <Moon className="h-5 w-5" />
-            Sombre
+            {t("settings.themeDark")}
           </button>
         </div>
 
@@ -478,24 +484,37 @@ function SettingsContent() {
             </button>
           </div>
         </div>
-      </section>
+      </Collapsible>
 
       {/* Sécurité */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-5 flex items-center gap-3">
+      <Collapsible className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900" header={<>
+        <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
             <Shield className="h-4 w-4" />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Sécurité</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Changer ton mot de passe</p>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">{t("v2.securityApp")}</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t("v2.securityAppHint")}</p>
           </div>
         </div>
+      </>}>
 
+        <AppLockPanel />
+
+        <Collapsible
+          className="mt-6 rounded-xl border border-slate-200 p-4 dark:border-slate-700"
+          header={
+            <span className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+              <KeyRound className="h-4 w-4" />
+              {t("v2.passwordSection")}
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{t("settings.securityHint")}</span>
+            </span>
+          }
+        >
         <form onSubmit={handlePasswordSubmit} className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              Mot de passe actuel
+              {t("settings.currentPassword")}
             </label>
             <div className="relative">
               <input
@@ -510,7 +529,7 @@ function SettingsContent() {
                 type="button"
                 onClick={() => setShowCurrent((v) => !v)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                aria-label={showCurrent ? "Masquer" : "Afficher"}
+                aria-label={showCurrent ? t("auth.hidePassword") : t("auth.showPassword")}
               >
                 {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -520,14 +539,14 @@ function SettingsContent() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Nouveau mot de passe
+                {t("settings.newPassword")}
               </label>
               <div className="relative">
                 <input
                   type={showNew ? "text" : "password"}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Au moins 8 caractères"
+                  placeholder={t("auth.passwordPlaceholder")}
                   autoComplete="new-password"
                   className="w-full rounded-xl border border-slate-300 px-3 py-2.5 pr-10 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
@@ -535,7 +554,7 @@ function SettingsContent() {
                   type="button"
                   onClick={() => setShowNew((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                  aria-label={showNew ? "Masquer" : "Afficher"}
+                  aria-label={showNew ? t("auth.hidePassword") : t("auth.showPassword")}
                 >
                   {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -553,20 +572,20 @@ function SettingsContent() {
                     ))}
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Force : {strengthLabel}
+                    {t("settings.passwordStrength")} : {strengthLabel}
                   </p>
                 </div>
               )}
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Confirmer
+                {t("settings.confirmPassword")}
               </label>
               <input
                 type={showNew ? "text" : "password"}
                 value={confirmNewPassword}
                 onChange={(e) => setConfirmNewPassword(e.target.value)}
-                placeholder="Ressaisis le mot de passe"
+                placeholder={t("auth.confirmPasswordPlaceholder")}
                 autoComplete="new-password"
                 className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
@@ -589,15 +608,16 @@ function SettingsContent() {
               className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
             >
               {isSavingPassword ? <Spinner size={16} /> : <KeyRound className="h-4 w-4" />}
-              Mettre à jour le mot de passe
+              {t("settings.updatePassword")}
             </button>
           </div>
         </form>
-      </section>
+        </Collapsible>
+      </Collapsible>
     
       {/* À propos */}
-      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="mb-5">
+      <Collapsible className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 mt-6" header={<>
+        <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             {t("about.title")}
           </h2>
@@ -605,6 +625,7 @@ function SettingsContent() {
             {t("about.subtitle")}
           </p>
         </div>
+      </>}>
 
         <div className="space-y-5 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
           <div>
@@ -647,7 +668,7 @@ function SettingsContent() {
             {t("about.version")}
           </p>
         </div>
-      </section>
+      </Collapsible>
 
     </main>
   );

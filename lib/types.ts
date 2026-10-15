@@ -65,6 +65,8 @@ export interface PublicPaymentDetails {
   requiredAmount: number;
   paidAmount: number;
   remainingAmount: number;
+  /** Frais de retrait tolérés (affichés ; n'augmentent pas le "reste" strict). */
+  withdrawalFeeAmount?: number | null;
   status: PaymentStatus;
   tokenExpiresAt: string;
 }
@@ -192,6 +194,7 @@ export interface GroupMember {
   contactEmail: string;
   contactPhone?: string;
   registeredUser: boolean;
+  preferredLocale?: string | null;
   joinedAt: string;
 }
 
@@ -200,6 +203,7 @@ export interface AddGroupMemberPayload {
   fullName?: string;
   email?: string;
   phone?: string;
+  preferredLocale?: string;
 }
 
 export interface GroupEvent {
@@ -208,6 +212,8 @@ export interface GroupEvent {
   description?: string;
   // Absent = événement sans argent (voir GroupEventCreatePayload).
   targetAmount?: number;
+  withdrawalFeeAmount?: number;
+  reminderDaysBefore?: string | null;
   eventDate: string;
   // Heure réglée par le créateur pour les relances de cet événement
   // (format "HH:mm:ss", tel que renvoyé par le backend). Absente = 08:00
@@ -230,6 +236,7 @@ export interface GroupEventCreatePayload {
   eventTime?: string;
   groupMemberIds: number[];
   repetitionType: RepetitionType;
+  reminderDaysBefore?: string;
 }
 
 export interface GroupEventUpdatePayload {
@@ -240,6 +247,7 @@ export interface GroupEventUpdatePayload {
   eventDate: string;
   eventTime?: string;
   repetitionType: RepetitionType;
+  reminderDaysBefore?: string;
 }
 
 export interface PaymentToken {

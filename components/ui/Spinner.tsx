@@ -1,4 +1,7 @@
+"use client";
+
 import { Loader2 } from "lucide-react";
+import { useLocale } from "@/contexts/LocaleContext";
 
 interface SpinnerProps {
   size?: number;
@@ -15,11 +18,12 @@ export function Spinner({ size = 20, label, className = "" }: SpinnerProps) {
   );
 }
 
-export function FullPageSpinner({ label = "Chargement..." }: { label?: string }) {
+export function FullPageSpinner({ label }: { label?: string }) {
+  const { t } = useLocale();
   return (
     <div className="flex min-h-[50vh] w-full flex-col items-center justify-center gap-3 text-slate-500 dark:text-slate-400">
       <Loader2 className="h-8 w-8 animate-spin" />
-      <p className="text-sm font-medium">{label}</p>
+      <p className="text-sm font-medium">{label ?? t("common.loading")}</p>
     </div>
   );
 }

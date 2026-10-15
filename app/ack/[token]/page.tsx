@@ -5,8 +5,10 @@ import { useParams } from "next/navigation";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { FullPageSpinner } from "@/components/ui/Spinner";
 import { acknowledgePublicReminder } from "@/lib/endpoints";
+import { useLocale } from "@/contexts/LocaleContext";
 
 export default function PublicAckPage() {
+  const { t } = useLocale();
   const params = useParams<{ token: string }>();
   const token = params.token;
 
@@ -26,7 +28,7 @@ export default function PublicAckPage() {
           setMemberFullName(result.memberFullName);
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Ce lien est invalide ou a expiré.";
+        const message = err instanceof Error ? err.message : t("msg.invalidLink");
         if (isMounted) setError(message);
       } finally {
         if (isMounted) setIsLoading(false);
@@ -37,6 +39,7 @@ export default function PublicAckPage() {
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   if (isLoading) {
@@ -56,10 +59,10 @@ export default function PublicAckPage() {
           <>
             <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-teal-600" />
             <p className="font-medium text-slate-900 dark:text-white">
-              {memberFullName ? `Merci ${memberFullName} !` : "Merci !"}
+              {memberFullName ? t("ui.thanksName", { name: memberFullName }) : t("ui.thanks")}
             </p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Ta lecture de "{eventTitle}" a bien été enregistrée.
+              {t("ui.readRecorded", { title: eventTitle ?? "" })}
             </p>
           </>
         )}

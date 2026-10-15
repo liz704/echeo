@@ -24,7 +24,7 @@ export default function PublicReminderCompletePage() {
         const result = await completePublicReminder(token);
         if (isMounted) setTitle(result.title);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Ce lien est invalide ou a expiré.";
+        const message = err instanceof Error ? err.message : t("msg.invalidLink");
         if (isMounted) setError(message);
       } finally {
         if (isMounted) setIsLoading(false);
@@ -35,6 +35,7 @@ export default function PublicReminderCompletePage() {
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   if (isLoading) {
@@ -55,7 +56,7 @@ export default function PublicReminderCompletePage() {
             <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-teal-600" />
             <p className="font-medium text-slate-900 dark:text-white">{t("reminders.completeSuccess")}</p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              "{title}" a été classé dans ton historique.
+              {t("ui.completedInHistory", { title: title ?? "" })}
             </p>
           </>
         )}

@@ -84,7 +84,7 @@ function RemindersContent() {
   async function handleEditSubmit() {
     if (!reminderToEdit) return;
     if (!editForm.title.trim() || !editForm.dueDate) {
-      setEditError("Le titre et la date d'échéance sont obligatoires.");
+      setEditError(t("msg.reminderRequired"));
       return;
     }
     setEditError(null);
@@ -102,7 +102,7 @@ function RemindersContent() {
       showSuccess(t("reminders.updatedSuccess"));
       setReminderToEdit(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la modification du rappel.";
+      const message = error instanceof Error ? error.message : t("msg.reminderEditFailed");
       setEditError(message);
       showError(message);
     } finally {
@@ -116,7 +116,7 @@ function RemindersContent() {
       const data = await fetchActiveReminders();
       setReminders(data);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Impossible de charger les rappels.";
+      const message = error instanceof Error ? error.message : t("msg.remindersLoadFailed");
       showError(message);
     } finally {
       setIsLoading(false);
@@ -137,11 +137,11 @@ function RemindersContent() {
 
     try {
       await markReminderCompleted(reminder.id);
-      showSuccess(`"${reminder.title}" marqué comme terminé.`);
+      showSuccess(t("msg.reminderMarkedDone", { title: reminder.title }));
     } catch (error) {
       // Échec : on restaure la liste précédente.
       setReminders(previousReminders);
-      const message = error instanceof Error ? error.message : "Échec de la mise à jour du rappel.";
+      const message = error instanceof Error ? error.message : t("msg.reminderUpdateFailed");
       showError(message);
     } finally {
       setPendingActionId(null);
@@ -155,10 +155,10 @@ function RemindersContent() {
     try {
       await deleteReminder(reminderToDelete.id);
       setReminders((current) => current.filter((r) => r.id !== reminderToDelete.id));
-      showSuccess(`"${reminderToDelete.title}" a été supprimé.`);
+      showSuccess(t("msg.reminderDeleted", { title: reminderToDelete.title }));
       setReminderToDelete(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la suppression du rappel.";
+      const message = error instanceof Error ? error.message : t("msg.reminderDeleteFailed");
       showError(message);
     } finally {
       setIsDeleting(false);
@@ -167,7 +167,7 @@ function RemindersContent() {
 
   async function handleCreateSubmit() {
     if (!form.title.trim() || !form.dueDate) {
-      setCreateError("Le titre et la date d'échéance sont obligatoires.");
+      setCreateError(t("msg.reminderRequired"));
       return;
     }
     setCreateError(null);
@@ -186,7 +186,7 @@ function RemindersContent() {
       setForm(EMPTY_FORM);
       setIsCreateModalOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Échec de la création du rappel.";
+      const message = error instanceof Error ? error.message : t("msg.reminderCreateFailed");
       setCreateError(message);
       showError(message);
     } finally {
@@ -277,7 +277,7 @@ function RemindersContent() {
                   ) : (
                     <CheckCircle2 className="h-4 w-4" />
                   )}
-                  Terminé
+                  {t("ui.done")}
                 </button>
                 <button
                   type="button"
@@ -342,7 +342,7 @@ function RemindersContent() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Date d'échéance
+                {t("ui.dueDate")}
               </label>
               <input
                 type="date"
@@ -435,7 +435,7 @@ function RemindersContent() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-                Date d'échéance
+                {t("ui.dueDate")}
               </label>
               <input
                 type="date"

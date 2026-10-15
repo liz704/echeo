@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useState, ReactNode } from "react";
 import { CheckCircle2, XCircle, X } from "lucide-react";
+import { useLocale } from "@/contexts/LocaleContext";
 
 type ToastVariant = "success" | "error";
 
@@ -21,6 +22,7 @@ const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 const AUTO_DISMISS_MS = 4000;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useLocale();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const removeToast = useCallback((id: number) => {
@@ -67,7 +69,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => removeToast(toast.id)}
-              aria-label="Fermer la notification"
+              aria-label={t("ui.closeNotification")}
               className="shrink-0 opacity-70 hover:opacity-100"
             >
               <X className="h-4 w-4" />

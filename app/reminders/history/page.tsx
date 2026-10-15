@@ -108,7 +108,7 @@ function ReminderHistoryContent() {
             className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
           >
             <Trash2 className="h-4 w-4" />
-            Tout supprimer
+            {t("ui.deleteAll")}
           </button>
         )}
       </div>
