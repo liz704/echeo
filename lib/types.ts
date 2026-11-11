@@ -49,6 +49,8 @@ export interface ReminderResponse {
   repetitionType: RepetitionType;
   completed: boolean;
   nextOccurrence?: string;
+  /** True when the reminder is paused (no notification, no automatic roll-forward). */
+  paused?: boolean;
 }
 
 export interface ReminderPayload {

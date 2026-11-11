@@ -92,6 +92,16 @@ export async function markReminderCompleted(id: number): Promise<ReminderRespons
   return response.data;
 }
 
+export async function pauseReminder(id: number): Promise<ReminderResponse> {
+  const response = await apiClient.patch<ReminderResponse>(`/reminders/${id}/pause`);
+  return response.data;
+}
+
+export async function resumeReminder(id: number): Promise<ReminderResponse> {
+  const response = await apiClient.patch<ReminderResponse>(`/reminders/${id}/resume`);
+  return response.data;
+}
+
 export async function deleteReminder(id: number): Promise<void> {
   await apiClient.delete(`/reminders/${id}`);
 }

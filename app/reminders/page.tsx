@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Trash2, Plus, RefreshCcw, History, Pencil } from "lucide-react";
+import { Check, CalendarDays, Clock, Plus, RefreshCcw, History, Repeat } from "lucide-react";
 import Link from "next/link";
 import { AuthGuard } from "@/components/AuthGuard";
 import { AppNavbar } from "@/components/AppNavbar";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { ConfirmModal, Modal } from "@/components/ui/Modal";
-import { StatusBadge, resolveReminderStatus } from "@/components/ui/Badge";
+import { resolveReminderStatus } from "@/components/ui/Badge";
+import { SwipeRow } from "@/components/ui/SwipeRow";
+import { Switch } from "@/components/ui/Switch";
+import { ReminderCard, type ReminderCardTone } from "@/components/ReminderCard";
+import { PRIMARY_BUTTON_CLASS, ReminderDetailSheet } from "@/components/ReminderDetailSheet";
+import { cardLabels, formatLongDate, formatTime } from "@/lib/dateFormat";
 import { useToast } from "@/contexts/ToastContext";
 import { useLocale } from "@/contexts/LocaleContext";
 import {
@@ -16,6 +21,8 @@ import {
   deleteReminder,
   fetchActiveReminders,
   markReminderCompleted,
+  pauseReminder,
+  resumeReminder,
 } from "@/lib/endpoints";
 import type { ReminderResponse, RepetitionType } from "@/lib/types";
 
@@ -49,8 +56,9 @@ const EMPTY_FORM: NewReminderForm = {
 
 function RemindersContent() {
   const { showSuccess, showError } = useToast();
-  const { t } = useLocale();
+  const { t, dateLocale } = useLocale();
 
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [reminders, setReminders] = useState<ReminderResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [pendingActionId, setPendingActionId] = useState<number | null>(null);
@@ -148,6 +156,22 @@ function RemindersContent() {
     }
   }
 
+  async function handleTogglePause(reminder: ReminderResponse) {
+    setPendingActionId(reminder.id);
+    try {
+      const updated = reminder.paused
+        ? await resumeReminder(reminder.id)
+        : await pauseReminder(reminder.id);
+      setReminders((current) => current.map((r) => (r.id === updated.id ? updated : r)));
+      showSuccess(updated.paused ? t("v3.reminderPaused") : t("v3.reminderResumed"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("msg.reminderUpdateFailed");
+      showError(message);
+    } finally {
+      setPendingActionId(null);
+    }
+  }
+
   async function handleConfirmDelete() {
     if (!reminderToDelete) return;
     setIsDeleting(true);
@@ -198,6 +222,8 @@ function RemindersContent() {
     return <FullPageSpinner label={t("reminders.loadingList")} />;
   }
 
+  const selected = reminders.find((r) => r.id === selectedId) ?? null;
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <div className="mb-6 flex items-center justify-between">
@@ -235,62 +261,148 @@ function RemindersContent() {
           {t("reminders.empty")}
         </div>
       ) : (
-        <ul className="space-y-3">
-          {reminders.map((reminder) => (
-            <li
-              key={reminder.id}
-              className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium text-slate-900 dark:text-white">{reminder.title}</p>
-                  <StatusBadge status={resolveReminderStatus(reminder.dueDate, reminder.completed)} />
-                </div>
-                {reminder.description && (
-                  <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{reminder.description}</p>
-                )}
-                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                  {t("reminders.dueLabel")} : {reminder.dueDate}
-                  {reminder.dueTime ? ` ${t("reminders.atTime")} ${reminder.dueTime.slice(0, 5)}` : ""} — {t("reminders.repetitionLabel")} :{" "}
-                  {repetitionLabel(t, reminder.repetitionType)}
+        <>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{t("v3.swipeHint")}</p>
+          <ul className="space-y-3">
+            {reminders.map((reminder) => {
+              const status = resolveReminderStatus(reminder.dueDate, reminder.completed);
+              const isPending = pendingActionId === reminder.id;
+              const labels = cardLabels({
+                dateIso: reminder.dueDate,
+                time: reminder.dueTime,
+                repetitionLabel:
+                  reminder.repetitionType === "NONE" ? null : repetitionLabel(t, reminder.repetitionType),
+                dateLocale,
+              });
+              const tone: ReminderCardTone = reminder.paused
+                ? "paused"
+                : status === "OVERDUE"
+                  ? "overdue"
+                  : "active";
+
+              return (
+                <li key={reminder.id}>
+                  <SwipeRow label={t("common.delete")} onSwipe={() => setReminderToDelete(reminder)}>
+                    <ReminderCard
+                      tone={tone}
+                      topLabel={labels.top}
+                      bigLabel={labels.big}
+                      title={reminder.title}
+                      meta={reminder.description}
+                      badge={
+                        reminder.paused
+                          ? t("v3.pausedBadge")
+                          : status === "OVERDUE"
+                            ? t("common.overdue")
+                            : undefined
+                      }
+                      onOpen={() => setSelectedId(reminder.id)}
+                      control={
+                        <div className="flex items-center gap-3">
+                          <Switch
+                            checked={!reminder.paused}
+                            disabled={isPending}
+                            onChange={() => handleTogglePause(reminder)}
+                            label={t("v3.reminderActive")}
+                          />
+                        <button
+                          type="button"
+                          onClick={() => handleComplete(reminder)}
+                          disabled={isPending}
+                          aria-label={t("ui.done")}
+                          title={t("ui.done")}
+                          className={`inline-flex h-12 w-12 items-center justify-center rounded-full border-2 transition disabled:opacity-60 ${
+                            reminder.paused
+                              ? "border-slate-400 text-slate-500 hover:bg-slate-300/40 dark:border-slate-500 dark:text-slate-300"
+                              : "border-white/70 text-white hover:bg-white/15"
+                          }`}
+                        >
+                          {isPending ? <Spinner size={18} /> : <Check className="h-6 w-6" />}
+                        </button>
+                        </div>
+                      }
+                    />
+                  </SwipeRow>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
+      {selected && (
+        <ReminderDetailSheet
+          isOpen
+          onClose={() => setSelectedId(null)}
+          bigLabel={
+            cardLabels({
+              dateIso: selected.dueDate,
+              time: selected.dueTime,
+              dateLocale,
+            }).big
+          }
+          topLabel={formatLongDate(selected.dueDate, dateLocale)}
+          title={selected.title}
+          description={selected.description}
+          rows={[
+            {
+              icon: <CalendarDays className="h-4 w-4" />,
+              label: t("reminders.dueLabel"),
+              value: `${selected.dueDate}${formatTime(selected.dueTime) ? ` ${t("reminders.atTime")} ${formatTime(selected.dueTime)}` : ""}`,
+            },
+            {
+              icon: <Repeat className="h-4 w-4" />,
+              label: t("reminders.repetitionLabel"),
+              value: repetitionLabel(t, selected.repetitionType),
+            },
+            ...(selected.nextOccurrence
+              ? [
+                  {
+                    icon: <Clock className="h-4 w-4" />,
+                    label: t("v3.nextOccurrence"),
+                    value: selected.nextOccurrence,
+                  },
+                ]
+              : []),
+          ]}
+          extra={
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-100 px-4 py-3 dark:bg-slate-800">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-900 dark:text-white">{t("v3.reminderActive")}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {selected.paused ? t("v3.reminderPausedHint") : t("v3.reminderActiveHint")}
                 </p>
               </div>
-
-              <div className="flex shrink-0 gap-2">
-                <button
-                  type="button"
-                  onClick={() => openEditModal(reminder)}
-                  aria-label={t("common.edit")}
-                  title={t("common.edit")}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <Pencil className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleComplete(reminder)}
-                  disabled={pendingActionId === reminder.id}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950"
-                >
-                  {pendingActionId === reminder.id ? (
-                    <Spinner size={14} />
-                  ) : (
-                    <CheckCircle2 className="h-4 w-4" />
-                  )}
-                  {t("ui.done")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setReminderToDelete(reminder)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {t("common.delete")}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+              <Switch
+                checked={!selected.paused}
+                disabled={pendingActionId === selected.id}
+                onChange={() => handleTogglePause(selected)}
+                label={t("v3.reminderActive")}
+              />
+            </div>
+          }
+          onEdit={() => {
+            setSelectedId(null);
+            openEditModal(selected);
+          }}
+          onDelete={() => {
+            setSelectedId(null);
+            setReminderToDelete(selected);
+          }}
+          primary={
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedId(null);
+                handleComplete(selected);
+              }}
+              className={PRIMARY_BUTTON_CLASS}
+            >
+              <Check className="h-4 w-4" />
+              {t("ui.done")}
+            </button>
+          }
+        />
       )}
 
       <ConfirmModal

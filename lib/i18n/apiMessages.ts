@@ -21,6 +21,8 @@ const EXACT_EN: Record<string, string> = {
   // Paiement en ligne
   "Rien à payer : cette échéance est déjà réglée.": "Nothing to pay: this due is already settled.",
   "Paiement en ligne non configuré (FAROTY_WALLET_ID manquant).": "Online payment is not configured yet.",
+  // Rappels personnels
+  "Ce rappel est déjà terminé, rien à mettre en pause.": "This reminder is already done, there is nothing to pause.",
   // Authentification
   "Email ou mot de passe incorrect.": "Incorrect email or password.",
   "Authentification requise ou invalide.": "Authentication required or invalid.",
