@@ -2,225 +2,1219 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Plus, Trash2, Users } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, CalendarDays, CalendarPlus, ChevronRight, Clock, Mail, Pencil, Repeat, UserPlus, Users, Wallet } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { AppNavbar } from "@/components/AppNavbar";
 import { FullPageSpinner, Spinner } from "@/components/ui/Spinner";
 import { ConfirmModal, Modal } from "@/components/ui/Modal";
-import { useLocale } from "@/contexts/LocaleContext";
 import { useToast } from "@/contexts/ToastContext";
-import { createGroup, deleteGroup, fetchMyGroups } from "@/lib/endpoints";
-import type { GroupSummary } from "@/lib/types";
+import { useLocale } from "@/contexts/LocaleContext";
+import {
+  addGroupMember,
+  createGroupEvent,
+  deleteGroup,
+  deleteGroupEvent,
+  fetchGroup,
+  fetchGroupEvents,
+  fetchGroupHistory,
+  fetchGroupMembers,
+  pauseGroupEvent,
+  removeGroupMember,
+  updateMemberLocale,
+  resumeGroupEvent,
+  updateGroup,
+  updateGroupEvent,
+} from "@/lib/endpoints";
+import type { GroupEvent, GroupMember, GroupPaymentHistoryItem, GroupSummary, RepetitionType } from "@/lib/types";
+import { Trash2 } from "lucide-react";
+import { ReminderDaysPicker } from "@/components/ReminderDaysPicker";
+import { SwipeRow } from "@/components/ui/SwipeRow";
+import { Switch } from "@/components/ui/Switch";
+import { ReminderCard, type ReminderCardTone } from "@/components/ReminderCard";
+import { PRIMARY_BUTTON_CLASS, ReminderDetailSheet } from "@/components/ReminderDetailSheet";
+import { cardLabels, formatLongDate, formatTime } from "@/lib/dateFormat";
 
-function GroupsContent() {
-  const { t } = useLocale();
+const REPETITION_KEYS = ["NONE", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"] as const;
+function repetitionLabel(t: (k: string) => string, value: string) {
+  const map: Record<string, string> = {
+    NONE: t("forms.repetitionNone"),
+    DAILY: t("forms.repetitionDaily"),
+    WEEKLY: t("forms.repetitionWeekly"),
+    MONTHLY: t("forms.repetitionMonthly"),
+    YEARLY: t("forms.repetitionYearly"),
+  };
+  return map[value] ?? value;
+}
+
+function formatAmount(value: number): string {
+  return new Intl.NumberFormat("fr-FR").format(value) + " FCFA";
+}
+
+/** "3,1,0" -> "J-3, J-1, Jour J" ; empty = default (7,3,0) ; "none" = no reminder before. */
+function formatReminderDays(
+  t: (k: string, params?: Record<string, string | number>) => string,
+  value?: string | null
+): string {
+  if (value === "none") return t("v2.noneBefore");
+  const days = (value ? value.split(",") : ["7", "3", "0"])
+    .map(Number)
+    .filter((n) => !Number.isNaN(n))
+    .sort((a, b) => b - a);
+  return days.map((d) => (d === 0 ? t("v2.dayOf") : t("v2.daysBefore", { n: d }))).join(", ");
+}
+
+function GroupDetailContent() {
+  const params = useParams<{ groupId: string }>();
+  const groupId = Number(params.groupId);
+  const router = useRouter();
   const { showSuccess, showError } = useToast();
+  const { t, dateLocale } = useLocale();
 
-  const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [group, setGroup] = useState<GroupSummary | null>(null);
+  const [events, setEvents] = useState<GroupEvent[]>([]);
+  const [historyPayments, setHistoryPayments] = useState<GroupPaymentHistoryItem[]>([]);
+  const [members, setMembers] = useState<GroupMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [groupToDelete, setGroupToDelete] = useState<GroupSummary | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
-  function loadGroups() {
+  // Ajout de membre — externe par défaut (pas besoin de compte ÉCHÉO) :
+  // seuls un nom et un email sont demandés.
+  const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
+  const [memberFullName, setMemberFullName] = useState("");
+  const [memberEmail, setMemberEmail] = useState("");
+  const [memberPhone, setMemberPhone] = useState("");
+  const [memberLocale, setMemberLocale] = useState("");
+  const [isAddingMember, setIsAddingMember] = useState(false);
+  const [memberError, setMemberError] = useState<string | null>(null);
+
+  // Création d'événement
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDescription, setEventDescription] = useState("");
+  const [eventTargetAmount, setEventTargetAmount] = useState("");
+  const [eventWithdrawalFee, setEventWithdrawalFee] = useState("");
+  const [eventHasMoney, setEventHasMoney] = useState(true);
+  const [eventDate, setEventDate] = useState("");
+  // Heure des relances de cet événement (optionnelle — 08:00 par défaut côté
+  // backend si laissée vide).
+  const [eventTime, setEventTime] = useState("");
+  const [eventRepetitionType, setEventRepetitionType] = useState<RepetitionType>("NONE");
+  const [eventReminderDays, setEventReminderDays] = useState("");
+  const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([]);
+  const [isCreatingEvent, setIsCreatingEvent] = useState(false);
+  const [eventError, setEventError] = useState<string | null>(null);
+
+  // Modification d'un événement à venir
+  const [editingEvent, setEditingEvent] = useState<GroupEvent | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTargetAmount, setEditTargetAmount] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
+  const [editRepetitionType, setEditRepetitionType] = useState<RepetitionType>("NONE");
+  const [editReminderDays, setEditReminderDays] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [isEditGroupModalOpen, setIsEditGroupModalOpen] = useState(false);
+  const [editGroupName, setEditGroupName] = useState("");
+  const [editGroupDescription, setEditGroupDescription] = useState("");
+  const [isSavingGroup, setIsSavingGroup] = useState(false);
+  const [editGroupError, setEditGroupError] = useState<string | null>(null);
+
+  const [isDeleteGroupModalOpen, setIsDeleteGroupModalOpen] = useState(false);
+  const [isDeletingGroup, setIsDeletingGroup] = useState(false);
+
+  const [memberToDelete, setMemberToDelete] = useState<GroupMember | null>(null);
+  const [isDeletingMember, setIsDeletingMember] = useState(false);
+
+  const [eventToDelete, setEventToDelete] = useState<GroupEvent | null>(null);
+  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+
+  async function handleSaveGroup() {
+    if (!editGroupName.trim()) {
+      setEditGroupError(t("msg.groupNameRequired"));
+      return;
+    }
+    setEditGroupError(null);
+    setIsSavingGroup(true);
+    try {
+      const updated = await updateGroup(groupId, {
+        name: editGroupName.trim(),
+        description: editGroupDescription.trim() || undefined,
+      });
+      setGroup(updated);
+      showSuccess(t("groups.editGroupSuccess"));
+      setIsEditGroupModalOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("msg.groupEditFailed");
+      setEditGroupError(message);
+      showError(message);
+    } finally {
+      setIsSavingGroup(false);
+    }
+  }
+
+  async function handleConfirmDeleteGroup() {
+    setIsDeletingGroup(true);
+    try {
+      await deleteGroup(groupId);
+      showSuccess(t("groups.deleteGroupSuccess"));
+      router.push("/groups");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("msg.groupDeleteFailed");
+      showError(message);
+    } finally {
+      setIsDeletingGroup(false);
+      setIsDeleteGroupModalOpen(false);
+    }
+  }
+
+  async function handleConfirmDeleteMember() {
+    if (!memberToDelete) return;
+    setIsDeletingMember(true);
+    try {
+      await removeGroupMember(groupId, memberToDelete.id);
+      setMembers((current) => current.filter((m) => m.id !== memberToDelete.id));
+      showSuccess(t("msg.memberRemoved", { name: memberToDelete.contactFullName }));
+      setMemberToDelete(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("msg.memberRemoveFailed");
+      showError(message);
+    } finally {
+      setIsDeletingMember(false);
+    }
+  }
+
+  async function handleConfirmDeleteEvent() {
+    if (!eventToDelete) return;
+    setIsDeletingEvent(true);
+    try {
+      await deleteGroupEvent(groupId, eventToDelete.id);
+      setEvents((current) => current.filter((e) => e.id !== eventToDelete.id));
+      showSuccess(t("msg.eventDeleted", { title: eventToDelete.title }));
+      setEventToDelete(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("msg.eventDeleteFailed");
+      showError(message);
+    } finally {
+      setIsDeletingEvent(false);
+    }
+  }
+
+  const [pausingEventId, setPausingEventId] = useState<number | null>(null);
+
+  function loadAll() {
     setIsLoading(true);
-    fetchMyGroups()
-      .then(setGroups)
+    Promise.all([
+      fetchGroup(groupId),
+      fetchGroupEvents(groupId),
+      fetchGroupMembers(groupId),
+      fetchGroupHistory(groupId),
+    ])
+      .then(([groupData, eventsData, membersData, historyData]) => {
+        setGroup(groupData);
+        setEvents(eventsData);
+        setMembers(membersData);
+        setHistoryPayments(historyData.payments ?? []);
+      })
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : t("common.error");
+        const message = error instanceof Error ? error.message : t("msg.groupLoadFailed");
         showError(message);
       })
       .finally(() => setIsLoading(false));
   }
 
   useEffect(() => {
-    loadGroups();
+    loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [groupId]);
 
-  async function handleCreate(event: FormEvent<HTMLFormElement>) {
+  async function handleAddMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!name.trim()) {
-      setCreateError(t("groups.name"));
+    if (!memberFullName.trim() || !memberEmail.trim()) {
+      setMemberError(t("msg.memberRequired"));
       return;
     }
-    setCreateError(null);
-    setIsCreating(true);
+    setMemberError(null);
+    setIsAddingMember(true);
+
     try {
-      await createGroup({ name: name.trim(), description: description.trim() || undefined });
-      showSuccess(t("groups.createCta"));
-      setName("");
-      setDescription("");
-      setIsModalOpen(false);
-      loadGroups();
+      const created = await addGroupMember(groupId, {
+        fullName: memberFullName.trim(),
+        email: memberEmail.trim(),
+        phone: memberPhone.trim() || undefined,
+        preferredLocale: memberLocale || undefined,
+      });
+      setMembers((current) => [...current, created]);
+      showSuccess(t("groups.memberAdded"));
+      setMemberFullName("");
+      setMemberEmail("");
+      setMemberPhone("");
+      setMemberLocale("");
+      setIsMemberModalOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : t("common.error");
-      setCreateError(message);
+      const message = error instanceof Error ? error.message : t("msg.memberAddFailed");
+      setMemberError(message);
       showError(message);
     } finally {
-      setIsCreating(false);
+      setIsAddingMember(false);
     }
   }
 
-  async function handleConfirmDelete() {
-    if (!groupToDelete) return;
-    setIsDeleting(true);
+  function toggleMemberSelection(memberId: number) {
+    setSelectedMemberIds((current) =>
+      current.includes(memberId) ? current.filter((id) => id !== memberId) : [...current, memberId]
+    );
+  }
+
+  async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const targetAmount = eventHasMoney ? Number(eventTargetAmount) : undefined;
+
+    if (!eventTitle.trim() || (eventHasMoney && !targetAmount) || !eventDate || selectedMemberIds.length === 0) {
+      setEventError(
+        eventHasMoney
+          ? t("msg.eventRequiredMoney")
+          : t("msg.eventRequiredNoMoney")
+      );
+      return;
+    }
+    setEventError(null);
+    setIsCreatingEvent(true);
+
     try {
-      await deleteGroup(groupToDelete.id);
-      setGroups((current) => current.filter((g) => g.id !== groupToDelete.id));
-      showSuccess(t("common.delete"));
-      setGroupToDelete(null);
+      const created = await createGroupEvent(groupId, {
+        title: eventTitle.trim(),
+        description: eventDescription.trim() || undefined,
+        targetAmount,
+        withdrawalFeeAmount: eventHasMoney && eventWithdrawalFee ? Number(eventWithdrawalFee) : undefined,
+        eventDate,
+        eventTime: eventTime || undefined,
+        groupMemberIds: selectedMemberIds,
+        repetitionType: eventRepetitionType,
+        reminderDaysBefore: eventReminderDays || undefined,
+      });
+      setEvents((current) => [...current, created]);
+      showSuccess(t("groups.eventCreatedSuccess"));
+      setEventTitle("");
+      setEventDescription("");
+      setEventTargetAmount("");
+      setEventWithdrawalFee("");
+      setEventHasMoney(true);
+      setEventDate("");
+      setEventTime("");
+      setEventRepetitionType("NONE");
+      setEventReminderDays("");
+      setSelectedMemberIds([]);
+      setIsEventModalOpen(false);
     } catch (error) {
-      const message = error instanceof Error ? error.message : t("common.error");
+      const message = error instanceof Error ? error.message : t("msg.eventCreateFailed");
+      setEventError(message);
       showError(message);
     } finally {
-      setIsDeleting(false);
+      setIsCreatingEvent(false);
     }
   }
 
-  if (isLoading) {
-    return <FullPageSpinner label={t("common.loading")} />;
+  function openEditModal(groupEvent: GroupEvent) {
+    setEditingEvent(groupEvent);
+    setEditTitle(groupEvent.title);
+    setEditDescription(groupEvent.description ?? "");
+    // null/undefined = événement sans argent : on laisse le champ vide.
+    setEditTargetAmount(
+      groupEvent.targetAmount != null ? String(groupEvent.targetAmount) : ""
+    );
+    setEditDate(groupEvent.eventDate);
+    // Le backend renvoie "HH:mm:ss" (LocalTime) ; l'input time attend "HH:mm".
+    setEditTime(groupEvent.eventTime ? groupEvent.eventTime.slice(0, 5) : "");
+    setEditRepetitionType(groupEvent.repetitionType);
+    setEditReminderDays(groupEvent.reminderDaysBefore ?? "");
+    setEditError(null);
+  }
+
+  async function handleSaveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingEvent) return;
+
+    const isWithMoney = editingEvent.targetAmount != null;
+    const targetAmount = isWithMoney ? Number(editTargetAmount) : undefined;
+
+    if (!editTitle.trim() || !editDate) {
+      setEditError(t("msg.titleDateRequired"));
+      return;
+    }
+    if (isWithMoney && (!targetAmount || targetAmount < 0 || Number.isNaN(targetAmount))) {
+      setEditError(t("msg.targetRequired"));
+      return;
+    }
+    setEditError(null);
+    setIsSavingEdit(true);
+
+    try {
+      const updated = await updateGroupEvent(groupId, editingEvent.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || undefined,
+        // On n'envoie targetAmount que si l'événement est (et reste) avec argent.
+        // Envoyer undefined pour un événement sans argent le laisse null côté backend.
+        targetAmount: isWithMoney ? targetAmount : undefined,
+        eventDate: editDate,
+        // On renvoie les frais existants : sinon la modification les effacerait.
+        withdrawalFeeAmount: isWithMoney ? editingEvent.withdrawalFeeAmount : undefined,
+        eventTime: editTime || undefined,
+        repetitionType: editRepetitionType,
+        reminderDaysBefore: editReminderDays || undefined,
+      });
+      setEvents((current) => current.map((e) => (e.id === updated.id ? updated : e)));
+      showSuccess(t("groups.eventUpdatedSuccess"));
+      setEditingEvent(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("msg.editFailed");
+      setEditError(message);
+      showError(message);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
+  async function handleTogglePause(groupEvent: GroupEvent) {
+    setPausingEventId(groupEvent.id);
+    try {
+      const updated = groupEvent.paused
+        ? await resumeGroupEvent(groupId, groupEvent.id)
+        : await pauseGroupEvent(groupId, groupEvent.id);
+      setEvents((current) => current.map((e) => (e.id === updated.id ? updated : e)));
+      showSuccess(updated.paused ? t("groups.recurrencePaused") : t("groups.recurrenceResumed"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("msg.actionFailed");
+      showError(message);
+    } finally {
+      setPausingEventId(null);
+    }
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const selectedEvent = events.find((e) => e.id === selectedEventId) ?? null;
+  const upcomingEvents = events.filter((e) => e.eventDate >= todayStr);
+  const pastEvents = events
+    .filter((e) => e.eventDate < todayStr)
+    .slice()
+    .sort((a, b) => (a.eventDate < b.eventDate ? 1 : -1));
+
+  const methodLabel = (m: string) => {
+    const key = `payments.method.${m}`;
+    const label = t(key);
+    return label === key ? m : label;
+  };
+
+  if (isLoading || !group) {
+    return <FullPageSpinner label={t("forms.loadingGroup")} />;
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      <div className="mb-6 flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            {t("groups.title")}
-          </h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t("groups.subtitle")}</p>
+    <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      <Link
+        href="/groups"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        {t("groups.backToGroups")}
+      </Link>
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="break-words text-2xl font-bold text-slate-900 dark:text-white">{group.name}</h1>
+          {group.description && (
+            <p className="mt-1 break-words text-sm text-slate-500 dark:text-slate-400">{group.description}</p>
+          )}
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+            {t("groups.owner")} : {group.owner.fullName}
+          </p>
         </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEditGroupName(group.name);
+              setEditGroupDescription(group.description ?? "");
+              setIsEditGroupModalOpen(true);
+            }}
+            aria-label={t("forms.editGroup")}
+            title={t("forms.editGroup")}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsDeleteGroupModalOpen(true)}
+            aria-label={t("forms.deleteGroup")}
+            title={t("forms.deleteGroup")}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="mt-6 flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex shrink-0 items-center gap-2 rounded-full bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+          onClick={() => setIsMemberModalOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
         >
-          <Plus className="h-4 w-4" />
-          <span className="hidden sm:inline">{t("groups.newGroup")}</span>
+          <UserPlus className="h-4 w-4" />
+          {t("groups.addMember")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsEventModalOpen(true)}
+          disabled={members.length === 0}
+          className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-50"
+        >
+          <CalendarPlus className="h-4 w-4" />
+          {t("groups.newEvent")}
         </button>
       </div>
 
-      {groups.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-900">
-          <Users className="mx-auto mb-3 h-10 w-10 text-slate-300 dark:text-slate-600" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">{t("groups.empty")}</p>
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="mt-4 inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
-          >
-            <Plus className="h-4 w-4" />
-            {t("groups.newGroup")}
-          </button>
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {groups.map((group) => (
-            <li
-              key={group.id}
-              className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-teal-200 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-teal-900"
-            >
-              <Link
-                href={`/groups/${group.id}`}
-                className="flex min-w-0 flex-1 items-center gap-3"
+      {/* Membres */}
+      <section className="mt-8">
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-white">
+          <Users className="h-4 w-4" />
+          {t("groups.membersTitle")} ({members.length})
+        </h2>
+        {members.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {t("groups.noMembers")}
+          </p>
+        ) : (
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {members.map((member) => (
+              <li
+                key={member.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-900"
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300">
-                  <Users className="h-5 w-5" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-slate-900 dark:text-white">
-                    {group.name}
-                  </p>
-                  {group.description && (
-                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                      {group.description}
+                <div className="min-w-0">
+                  <p className="break-words font-medium text-slate-900 dark:text-white">{member.contactFullName}</p>
+                  <p className="break-all text-xs text-slate-400">{member.contactEmail}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={member.preferredLocale ?? ""}
+                    onChange={async (e) => {
+                      try {
+                        const updated = await updateMemberLocale(groupId, member.id, e.target.value);
+                        setMembers((current) => current.map((m) => (m.id === updated.id ? updated : m)));
+                      } catch (error) {
+                        showError(error instanceof Error ? error.message : t("msg.actionFailed"));
+                      }
+                    }}
+                    aria-label={t("v2.memberLanguage")}
+                    title={t("v2.memberLanguage")}
+                    className="rounded-md border border-slate-200 bg-transparent px-1 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300"
+                  >
+                    <option value="">{t("v2.langDefault")}</option>
+                    <option value="fr">FR</option>
+                    <option value="en">EN</option>
+                  </select>
+                  {member.registeredUser && (
+                    <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 dark:bg-teal-950 dark:text-teal-300">
+                      {t("ui.registered")}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setMemberToDelete(member)}
+                    aria-label={t("forms.removeMember")}
+                    title={t("forms.removeMember")}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-50 dark:hover:bg-red-950"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* {t("groups.upcoming")} */}
+      <section className="mt-8">
+        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">{t("groups.upcoming")}</h2>
+
+        {upcomingEvents.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            {t("groups.noUpcoming")}
+          </div>
+        ) : (
+          <>
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{t("v3.swipeHint")}</p>
+            <ul className="space-y-3">
+              {upcomingEvents.map((groupEvent) => {
+                const isRecurring = groupEvent.repetitionType !== "NONE";
+                const tone: ReminderCardTone = groupEvent.paused ? "paused" : "active";
+                const labels = cardLabels({
+                  dateIso: groupEvent.eventDate,
+                  time: groupEvent.eventTime,
+                  repetitionLabel: isRecurring ? repetitionLabel(t, groupEvent.repetitionType) : null,
+                  dateLocale,
+                });
+
+                return (
+                  <li key={groupEvent.id}>
+                    <SwipeRow label={t("common.delete")} onSwipe={() => setEventToDelete(groupEvent)}>
+                      <ReminderCard
+                        tone={tone}
+                        topLabel={labels.top}
+                        bigLabel={labels.big}
+                        title={groupEvent.title}
+                        meta={
+                          groupEvent.targetAmount != null
+                            ? `${t("forms.objective")} : ${formatAmount(groupEvent.targetAmount)}`
+                            : t("ui.infoNoMoney")
+                        }
+                        badge={groupEvent.paused ? t("v3.pausedBadge") : undefined}
+                        onOpen={() => setSelectedEventId(groupEvent.id)}
+                        control={
+                          isRecurring ? (
+                            <Switch
+                              checked={!groupEvent.paused}
+                              disabled={pausingEventId === groupEvent.id}
+                              onChange={() => handleTogglePause(groupEvent)}
+                              label={t("v3.recurrenceLabel")}
+                            />
+                          ) : (
+                            <ChevronRight className="h-5 w-5 opacity-70" />
+                          )
+                        }
+                      />
+                    </SwipeRow>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </section>
+
+
+      {/* {t("groups.historyTitle")} */}
+      <section className="mt-10">
+        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">{t("groups.historyTitle")}</h2>
+
+        <h3 className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-300">{t("groups.pastEvents")}</h3>
+        {pastEvents.length === 0 ? (
+          <div className="mb-6 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            {t("groups.noPast")}
+          </div>
+        ) : (
+          <ul className="mb-6 space-y-2">
+            {pastEvents.map((groupEvent) => (
+              <li key={groupEvent.id}>
+                <Link
+                  href={`/groups/${groupId}/events/${groupEvent.id}`}
+                  className="flex items-center justify-between gap-3 rounded-2xl bg-slate-100 p-4 transition hover:bg-slate-200 dark:bg-slate-800/70 dark:hover:bg-slate-800"
+                >
+                  <div className="min-w-0">
+                    <p className="break-words font-medium text-slate-900 dark:text-white">{groupEvent.title}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {t("forms.due")} : {groupEvent.eventDate}
+                      {groupEvent.targetAmount != null
+                        ? ` — ${t("forms.objective")} : ${formatAmount(groupEvent.targetAmount)}`
+                        : ` — ${t("ui.infoNoMoney")}`}
                     </p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <h3 className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-300">{t("groups.recordedPayments")}</h3>
+        {historyPayments.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            {t("groups.noPayments")}
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {historyPayments.map((payment) => (
+              <li
+                key={payment.id}
+                className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">
+                      {payment.memberFullName ?? t("groups.memberFallback")} — {formatAmount(payment.amountPaid)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                      {payment.eventTitle ?? t("ui.event")}
+                      {" · "}
+                      {methodLabel(payment.paymentMethod)}
+                      {" · "}
+                      {new Date(payment.paidAt).toLocaleString(dateLocale)}
+                      {payment.transactionRef ? ` · ${t("ui.ref")} ${payment.transactionRef}` : ""}
+                    </p>
+                  </div>
+                  {payment.eventId != null && (
+                    <Link
+                      href={`/groups/${groupId}/events/${payment.eventId}`}
+                      className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+                    >
+                      {t("groups.seeEvent")}
+                    </Link>
                   )}
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-              </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Modale ajout membre (externe : nom + email suffisent) */}
+      <Modal isOpen={isMemberModalOpen} onClose={() => setIsMemberModalOpen(false)} title={t("groups.addMember")}>
+        <form onSubmit={handleAddMember} className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("auth.fullName")}
+            </label>
+            <input
+              type="text"
+              placeholder={t("forms.placeholderName")}
+              value={memberFullName}
+              onChange={(e) => setMemberFullName(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("forms.email")}
+            </label>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="email"
+                placeholder={t("forms.placeholderEmail")}
+                value={memberEmail}
+                onChange={(e) => setMemberEmail(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("forms.phone")} <span className="font-normal text-slate-400">{t("forms.optional")}</span>
+            </label>
+            <input
+              type="tel"
+              placeholder="+237 6XX XXX XXX"
+              value={memberPhone}
+              onChange={(e) => setMemberPhone(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("v2.memberLanguage")} <span className="font-normal text-slate-400">{t("forms.optional")}</span>
+            </label>
+            <select
+              value={memberLocale}
+              onChange={(e) => setMemberLocale(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              <option value="">{t("v2.langDefault")}</option>
+              <option value="fr">{t("v2.langFr")}</option>
+              <option value="en">{t("v2.langEn")}</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-400">{t("v2.memberLanguageHint")}</p>
+          </div>
+          <p className="text-xs text-slate-400">
+            {t("ui.memberNoAccount")}
+          </p>
+
+          {memberError && (
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+              {memberError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={isAddingMember}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+          >
+            {isAddingMember && <Spinner size={16} />}
+            {t("forms.addMember")}
+          </button>
+        </form>
+      </Modal>
+
+      {/* Modale création événement — sélection réelle des membres */}
+      <Modal isOpen={isEventModalOpen} onClose={() => setIsEventModalOpen(false)} title={t("groups.newEvent")}>
+        <form onSubmit={handleCreateEvent} className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">{t("forms.title")}</label>
+            <input
+              type="text"
+              placeholder={t("forms.placeholderTitle")}
+              value={eventTitle}
+              onChange={(e) => setEventTitle(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("forms.description")} <span className="font-normal text-slate-400">{t("forms.optional")}</span>
+            </label>
+            <textarea
+              value={eventDescription}
+              onChange={(e) => setEventDescription(e.target.value)}
+              rows={2}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("forms.eventType")}
+            </span>
+            <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setGroupToDelete(group)}
-                aria-label={t("common.delete")}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-red-100 text-red-600 transition hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                onClick={() => setEventHasMoney(true)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  eventHasMoney
+                    ? "border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                    : "border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                }`}
               >
-                <Trash2 className="h-4 w-4" />
+                {t("forms.withMoney")}
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
+              <button
+                type="button"
+                onClick={() => setEventHasMoney(false)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  !eventHasMoney
+                    ? "border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300"
+                    : "border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400"
+                }`}
+              >
+                {t("forms.withoutMoney")}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {eventHasMoney && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t("v2.amountPerMember")}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder={t("ui.example", { value: "5000" })}
+                  value={eventTargetAmount}
+                  onChange={(e) => setEventTargetAmount(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+                <p className="mt-1 text-xs text-slate-400">{t("v2.amountPerMemberHint")}</p>
+              </div>
+            )}
+            {eventHasMoney && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t("forms.withdrawalFee")} <span className="font-normal text-slate-400">{t("forms.optional")}</span>
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder={t("ui.example", { value: "300" })}
+                  value={eventWithdrawalFee}
+                  onChange={(e) => setEventWithdrawalFee(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  {t("forms.withdrawalFeeHint")}
+                </p>
+                {Number(eventTargetAmount) > 0 && Number(eventWithdrawalFee) > 0 && (
+                  <p className="mt-1 text-xs font-medium text-teal-700 dark:text-teal-300">
+                    {t("v2.feePreview", {
+                      total: Number(eventTargetAmount) + Number(eventWithdrawalFee),
+                      amount: Number(eventTargetAmount),
+                      fee: Number(eventWithdrawalFee),
+                    })}
+                  </p>
+                )}
+              </div>
+            )}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                {t("forms.eventDate")}
+              </label>
+              <input
+                type="date"
+                value={eventDate}
+                onChange={(e) => setEventDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                {t("forms.reminderTime")} {t("forms.reminderTimeHint")}
+              </label>
+              <input
+                type="time"
+                value={eventTime}
+                onChange={(e) => setEventTime(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("reminders.repetition")}
+            </label>
+            <select
+              value={eventRepetitionType}
+              onChange={(e) => setEventRepetitionType(e.target.value as RepetitionType)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              {REPETITION_KEYS.map((value) => (
+                <option key={value} value={value}>
+                  {repetitionLabel(t, value)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">
+              {t("forms.recurrenceHint")}
+            </p>
+          </div>
+
+          <ReminderDaysPicker value={eventReminderDays} onChange={setEventReminderDays} />
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("forms.membersConcerned")}
+            </label>
+            <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-700">
+              {members.map((member) => (
+                <label
+                  key={member.id}
+                  className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedMemberIds.includes(member.id)}
+                    onChange={() => toggleMemberSelection(member.id)}
+                    className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <span className="break-words text-slate-700 dark:text-slate-200">{member.contactFullName}</span>
+                  <span className="break-all text-xs text-slate-400">{member.contactEmail}</span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {t("ui.targetSplit")}
+            </p>
+          </div>
+
+          {eventError && (
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+              {eventError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={isCreatingEvent}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+          >
+            {isCreatingEvent && <Spinner size={16} />}
+            {t("forms.createEvent")}
+          </button>
+        </form>
+      </Modal>
+
+      {/* Modale modification (événement à venir uniquement) */}
+      <Modal
+        isOpen={!!editingEvent}
+        onClose={() => setEditingEvent(null)}
+        title={t("ui.editTitleWith", { title: editingEvent?.title ?? "" })}
+      >
+        <form onSubmit={handleSaveEdit} className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">{t("forms.title")}</label>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("forms.description")}
+            </label>
+            <textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              rows={2}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+          <div className={`grid gap-3 ${editingEvent?.targetAmount != null ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}>
+            {editingEvent?.targetAmount != null && (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {t("forms.targetAmount")}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={editTargetAmount}
+                  onChange={(e) => setEditTargetAmount(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                />
+              </div>
+            )}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                {t("forms.date")}
+              </label>
+              <input
+                type="date"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                {t("forms.time")} {t("forms.optional")}
+              </label>
+              <input
+                type="time"
+                value={editTime}
+                onChange={(e) => setEditTime(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {t("reminders.repetition")}
+            </label>
+            <select
+              value={editRepetitionType}
+              onChange={(e) => setEditRepetitionType(e.target.value as RepetitionType)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            >
+              {REPETITION_KEYS.map((value) => (
+                <option key={value} value={value}>
+                  {repetitionLabel(t, value)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <ReminderDaysPicker value={editReminderDays} onChange={setEditReminderDays} />
+
+          {editError && (
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+              {editError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={isSavingEdit}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+          >
+            {isSavingEdit && <Spinner size={16} />}
+            {t("forms.save")}
+          </button>
+        </form>
+      </Modal>
 
       <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={t("groups.createTitle")}
+        isOpen={isEditGroupModalOpen}
+        onClose={() => {
+          setIsEditGroupModalOpen(false);
+          setEditGroupError(null);
+        }}
+        title={t("forms.editGroup")}
       >
-        <form onSubmit={handleCreate} className="space-y-4">
+        <div className="space-y-4">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
               {t("groups.name")}
             </label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              value={editGroupName}
+              onChange={(e) => setEditGroupName(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
-              {t("groups.description")}
+              {t("forms.description")} <span className="font-normal text-slate-400">{t("forms.optional")}</span>
             </label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              value={editGroupDescription}
+              onChange={(e) => setEditGroupDescription(e.target.value)}
+              rows={2}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
-          {createError && (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-              {createError}
+          {editGroupError && (
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+              {editGroupError}
             </p>
           )}
           <button
-            type="submit"
-            disabled={isCreating}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
+            type="button"
+            onClick={handleSaveGroup}
+            disabled={isSavingGroup}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
           >
-            {isCreating && <Spinner size={16} />}
-            {t("groups.createCta")}
+            {isSavingGroup && <Spinner size={16} />}
+            {t("forms.save")}
           </button>
-        </form>
+        </div>
       </Modal>
 
       <ConfirmModal
-        isOpen={!!groupToDelete}
+        isOpen={isDeleteGroupModalOpen}
         title={t("groups.deleteTitle")}
-        description={t("groups.deleteDesc")}
+        description={t("ui.deleteGroupDesc", { name: group?.name ?? "" })}
         confirmLabel={t("common.delete")}
-        cancelLabel={t("common.cancel")}
         isDangerous
-        isLoading={isDeleting}
-        onConfirm={handleConfirmDelete}
-        onCancel={() => setGroupToDelete(null)}
+        isLoading={isDeletingGroup}
+        onConfirm={handleConfirmDeleteGroup}
+        onCancel={() => setIsDeleteGroupModalOpen(false)}
+      />
+
+      <ConfirmModal
+        isOpen={!!memberToDelete}
+        title={t("ui.removeMemberTitle")}
+        description={t("ui.removeMemberDesc", { name: memberToDelete?.contactFullName ?? "" })}
+        confirmLabel={t("ui.removeMemberCta")}
+        isDangerous
+        isLoading={isDeletingMember}
+        onConfirm={handleConfirmDeleteMember}
+        onCancel={() => setMemberToDelete(null)}
+      />
+
+      {selectedEvent && (
+        <ReminderDetailSheet
+          isOpen
+          onClose={() => setSelectedEventId(null)}
+          bigLabel={
+            cardLabels({
+              dateIso: selectedEvent.eventDate,
+              time: selectedEvent.eventTime,
+              dateLocale,
+            }).big
+          }
+          topLabel={formatLongDate(selectedEvent.eventDate, dateLocale)}
+          title={selectedEvent.title}
+          description={selectedEvent.description}
+          rows={[
+            {
+              icon: <CalendarDays className="h-4 w-4" />,
+              label: t("forms.due"),
+              value: `${selectedEvent.eventDate}${formatTime(selectedEvent.eventTime) ? ` ${t("reminders.atTime")} ${formatTime(selectedEvent.eventTime)}` : ""}`,
+            },
+            {
+              icon: <Repeat className="h-4 w-4" />,
+              label: t("reminders.repetitionLabel"),
+              value: repetitionLabel(t, selectedEvent.repetitionType),
+            },
+            {
+              icon: <Wallet className="h-4 w-4" />,
+              label: t("forms.objective"),
+              value:
+                selectedEvent.targetAmount != null
+                  ? formatAmount(selectedEvent.targetAmount)
+                  : t("ui.infoNoMoney"),
+            },
+            ...(selectedEvent.withdrawalFeeAmount
+              ? [
+                  {
+                    icon: <Wallet className="h-4 w-4" />,
+                    label: t("v3.withdrawalFee"),
+                    value: formatAmount(selectedEvent.withdrawalFeeAmount),
+                  },
+                ]
+              : []),
+            {
+              icon: <Clock className="h-4 w-4" />,
+              label: t("v2.reminderDays"),
+              value: formatReminderDays(t, selectedEvent.reminderDaysBefore),
+            },
+          ]}
+          extra={
+            selectedEvent.repetitionType !== "NONE" ? (
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-100 px-4 py-3 dark:bg-slate-800">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900 dark:text-white">{t("v3.recurrenceLabel")}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {selectedEvent.paused ? t("v3.recurrenceOffHint") : t("v3.recurrenceOnHint")}
+                  </p>
+                </div>
+                <Switch
+                  checked={!selectedEvent.paused}
+                  disabled={pausingEventId === selectedEvent.id}
+                  onChange={() => handleTogglePause(selectedEvent)}
+                  label={t("v3.recurrenceLabel")}
+                />
+              </div>
+            ) : undefined
+          }
+          onEdit={() => {
+            setSelectedEventId(null);
+            openEditModal(selectedEvent);
+          }}
+          onDelete={() => {
+            setSelectedEventId(null);
+            setEventToDelete(selectedEvent);
+          }}
+          primary={
+            <Link href={`/groups/${groupId}/events/${selectedEvent.id}`} className={PRIMARY_BUTTON_CLASS}>
+              {t("v3.openDetails")}
+              <ChevronRight className="h-4 w-4" />
+            </Link>
+          }
+        />
+      )}
+
+      <ConfirmModal
+        isOpen={!!eventToDelete}
+        title={t("groups.deleteEvent") + " ?"}
+        description={t("ui.deleteEventDesc", { title: eventToDelete?.title ?? "" })}
+        confirmLabel={t("common.delete")}
+        isDangerous
+        isLoading={isDeletingEvent}
+        onConfirm={handleConfirmDeleteEvent}
+        onCancel={() => setEventToDelete(null)}
       />
     </main>
   );
 }
 
-export default function GroupsPage() {
+export default function GroupDetailPage() {
   return (
     <AuthGuard>
       <AppNavbar />
-      <GroupsContent />
+      <GroupDetailContent />
     </AuthGuard>
   );
 }
